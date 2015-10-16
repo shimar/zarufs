@@ -8,3 +8,10 @@ all:
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+
+
+insmod:
+	sudo insmod zarufs.ko
+
+rmmod:
+	sudo rmmod zarufs
