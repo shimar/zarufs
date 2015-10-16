@@ -11,7 +11,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
                                    void *data,
                                    int silent);
 /* for debug. */
-static void debug_print_zarufs_sb(struct zarufs_super_block* zsb);
+/* static void debug_print_zarufs_sb(struct zarufs_super_block* zsb); */
 
 
 struct dentry *
@@ -27,9 +27,17 @@ static int zarufs_fill_super_block(struct super_block *sb,
                                    int silent) {
   struct buffer_head        *bh;
   struct zarufs_super_block *zsb;
+  struct zarufs_sb_info     *zsi;
   int                       block_size;
   int                       ret = -EINVAL;
-  //unsigned long             sb_block = 1;
+
+  // allocate memory to zarufs_sb_info.
+  zsi = kzalloc(sizeof(struct zarufs_sb_info), GFP_KERNEL);
+  if (!zsi) {
+    DBGPRINT("[ZARUFS] Error: unable to allocate mem for zarufs_sb_info.\n");
+    ret = -ENOMEM;
+    return ret;
+  }
 
   // set device's block size and size bits to super block.
   block_size = sb_min_blocksize(sb, BLOCK_SIZE);
@@ -38,27 +46,41 @@ static int zarufs_fill_super_block(struct super_block *sb,
 
   if (!block_size) {
     DBGPRINT("[ZARUFS] Error: unable to set block_size.\n");
-    return ret;
+    goto error_read_sb;
   }
   
   if (!(bh = sb_bread(sb, 1))) {
     DBGPRINT("[ZARUFS] Error: failed to bread super block.\n");
-    return ret;
+    goto error_read_sb;
   }
 
   zsb = (struct zarufs_super_block*)(bh->b_data);
-  debug_print_zarufs_sb(zsb);
-  return 0;
-}
+  sb->s_magic = le16_to_cpu(zsb->s_magic);
+  if (sb->s_magic != ZARUFS_SUPER_MAGIC) {
+    DBGPRINT("[ZARUFS] Error: magic of super block is %lu.\n", sb->s_magic);
+    goto error_read_sb;
+  }
 
+  zsi->s_zsb = zsb;
+  zsi->s_sbh = bh;
+
+  // setup vfs super block.
+  sb->s_fs_info = (void*) zsi;
+  /* debug_print_zarufs_sb(zsb); */
+  return 0;
+
+ error_read_sb:
+  kfree(zsi);
+  return ret;
+}
 
 
 /* for debug. */
-static void debug_print_zarufs_sb(struct zarufs_super_block* zsb) {
-  unsigned int value;
-  /* int          i; */
+/* static void debug_print_zarufs_sb(struct zarufs_super_block* zsb) { */
+/*   unsigned int value; */
+/*   /\* int          i; *\/ */
 
-  value = (unsigned int)(le32_to_cpu(zsb->s_inodes_count));
-  DBGPRINT("[ZARUFS] s_inodes_count = %d\n", value);
-  return;
-}
+/*   value = (unsigned int)(le32_to_cpu(zsb->s_inodes_count)); */
+/*   DBGPRINT("[ZARUFS] s_inodes_count = %d\n", value); */
+/*   return; */
+/* } */
