@@ -1,4 +1,5 @@
-ZARUFS_SRC = src/zarufs.c
+ZARUFS_SRC = src/zarufs.c \
+						 src/zarufs_super.c
 
 obj-m += zarufs.o
 zarufs-objs := $(ZARUFS_SRC:.c=.o)

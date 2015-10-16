@@ -3,6 +3,7 @@
 #include <linux/fs.h>
 
 #include "../include/zarufs.h"
+#include "zarufs_super.h"
 #include "zarufs_utils.h"
 
 static struct dentry *zarufs_mount(struct file_system_type *fs_type,
@@ -23,7 +24,7 @@ static struct dentry *zarufs_mount(struct file_system_type *fs_type,
                                    const char *dev_name,
                                    void *data) {
 
-  DBGPRINT("[ZARUFS] Not Implemented Yet!\n");
+  zarufs_mount_block_dev(fs_type, flags, dev_name, data);
   return NULL;
 }
 
