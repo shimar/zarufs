@@ -1,6 +1,11 @@
 #ifndef _ZARUFS_H_
 #define _ZARUFS_H_
 
+#include <uapi/linux/magic.h>
+
+
+#define ZARUFS_SUPER_MAGIC EXT2_SUPER_MAGIC /* 0xEF53 */
+
 struct zarufs_super_block {
   __le32 s_inodes_count;
   __le32 s_blocks_count;
@@ -56,6 +61,11 @@ struct zarufs_super_block {
   __le32 s_default_mount_opts;
   __le32 s_first_meta_bg;
   __le32 s_reserved[190];
+};
+
+struct zarufs_sb_info {
+  struct zarufs_super_block *s_zsb;
+  struct buffer_head        *s_sbh;
 };
 
 #endif /* _ZARUFS_H_ */
