@@ -6,6 +6,11 @@
 
 #define ZARUFS_SUPER_MAGIC EXT2_SUPER_MAGIC /* 0xEF53 */
 
+#define ZARUFS_EXT2_BAD_INO      1
+#define ZARUFS_EXT2_ROOT_INO     2
+#define ZARUFS_EXT2_BL_INO       5
+#define ZARUFS_EXT2_UNDER_DIR_NO 6
+
 struct zarufs_super_block {
   __le32 s_inodes_count;
   __le32 s_blocks_count;
@@ -21,6 +26,7 @@ struct zarufs_super_block {
   __le32 s_mtime;
   __le32 s_wtime;
   __le16 s_mnt_count;
+  __le16 s_max_mnt_count;
   __le16 s_magic;
   __le16 s_state;
   __le16 s_errors;
@@ -43,29 +49,33 @@ struct zarufs_super_block {
   char   s_volume_name[16];
   char   s_last_mounted[64];
   __le32 s_algorithm_usage_bitmap;
+
   // performance hints
   __u8   s_preallock_blocks;
   __u8   s_preallock_dir_blocks;
-  __u8   s_padding1;
+  __u16  s_padding1;
+
   // journaling support
   __u8   s_journal_uuid[16];
   __u32  s_journal_inum;
   __u32  s_journal_dev;
   __u32  s_last_orphan;
+
   // directory indexing support
   __u32  s_hash_seed[4];
   __u8   s_def_hash_version;
   __u8   s_reserved_char_pad;
   __u16  s_reserved_word_pad;
+
   // other options
   __le32 s_default_mount_opts;
   __le32 s_first_meta_bg;
-  __le32 s_reserved[190];
+  __u32  s_reserved[190];
 };
 
 struct zarufs_sb_info {
   struct zarufs_super_block *s_zsb;
-  struct buffer_head        *s_sbh;
+  struct buffer_head      *s_sbh;
 };
 
 #endif /* _ZARUFS_H_ */

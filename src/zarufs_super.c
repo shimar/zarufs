@@ -7,9 +7,77 @@
 #include "zarufs_super.h"
 #include "zarufs_utils.h"
 
+
 static int zarufs_fill_super_block(struct super_block *sb,
                                    void *data,
                                    int silent);
+
+static void zarufs_put_super_block(struct super_block *sb);
+
+
+static int zarufs_write_inode(struct inode* inode, struct writeback_control *wbc) {
+  DBGPRINT("[ZARUFS] write_inode\n");
+  return 0;
+}
+
+static void zarufs_destroy_inode(struct inode* inode) {
+  DBGPRINT("[ZARUFS] destroy_inode\n");
+  return;
+}
+
+static void zarufs_evict_inode(struct inode* inode) {
+  DBGPRINT("[ZARUFS] evict_inode\n");
+  return;
+}
+
+static int zarufs_sync_fs(struct super_block *sb, int wait) {
+  DBGPRINT("[ZARUFS] sync_fs\n");
+  return 0;
+}
+
+static int zarufs_freeze_fs(struct super_block *sb) {
+  DBGPRINT("[ZARUFS] freeze_fs\n");
+  return 0;
+}
+
+static int zarufs_unfreeze_fs(struct super_block *sb) {
+  DBGPRINT("[ZARUFS] unfreeze_fs\n");
+  return 0;
+}
+
+static int zarufs_statfs(struct dentry *dentry, struct kstatfs *buf) {
+  DBGPRINT("[ZARUFS] statfs\n");
+  return 0;
+}
+
+static int zarufs_remount_fs(struct super_block* sb, int *len, char *buf) {
+  DBGPRINT("[ZARUFS] remount_fs\n");
+  return 0;
+}
+
+static int zarufs_show_options(struct sec_file *sec_file, struct dentry *dentry) {
+  DBGPRINT("[ZARUFS] show_options\n");
+  return 0;
+}
+
+static inline struct zarufs_sb_info *ZARUFS_SB(struct super_block *sb) {
+  return ((struct zarufs_sb_info*) sb->s_fs_info);
+}
+
+static struct super_operations zarufs_super_ops = {
+  .write_inode  = zarufs_write_inode,
+  /* .evict_inode  = zarufs_evict_inode, */
+  .put_super    = zarufs_put_super_block,
+  .sync_fs      = zarufs_sync_fs,
+  .freeze_fs    = zarufs_freeze_fs,
+  .unfreeze_fs  = zarufs_unfreeze_fs,
+  .statfs       = zarufs_statfs,
+  .remount_fs   = zarufs_remount_fs,
+  .show_options = zarufs_show_options,
+};
+
+
+
 /* for debug. */
 /* static void debug_print_zarufs_sb(struct zarufs_super_block* zsb); */
 
@@ -28,6 +96,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
   struct buffer_head        *bh;
   struct zarufs_super_block *zsb;
   struct zarufs_sb_info     *zsi;
+  struct inode              *root;
   int                       block_size;
   int                       ret = -EINVAL;
 
@@ -43,6 +112,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
   block_size = sb_min_blocksize(sb, BLOCK_SIZE);
   DBGPRINT("[ZARUFS] Fill super block. block_size=%d\n", block_size);
   DBGPRINT("[ZARUFS] default block_size=%d\n", BLOCK_SIZE);
+  DBGPRINT("[ZARUFS] device is: %s\n", sb->s_id);
 
   if (!block_size) {
     DBGPRINT("[ZARUFS] Error: unable to set block_size.\n");
@@ -65,15 +135,50 @@ static int zarufs_fill_super_block(struct super_block *sb,
   zsi->s_sbh = bh;
 
   // setup vfs super block.
+  sb->s_op = &zarufs_super_ops;
+  DBGPRINT("[ZARUFS] max file size=%lu\n", (unsigned long) sb->s_maxbytes);
   sb->s_fs_info = (void*) zsi;
+  root = iget_locked(sb, ZARUFS_EXT2_ROOT_INO);
+  if (IS_ERR(root)) {
+    DBGPRINT("[ZARUFS] Error: failed to get root inode.\n");
+    ret = PTR_ERR(root);
+    goto error_mount;
+  }
+
+  unlock_new_inode(root);
+  inc_nlink(root);
+  root->i_mode = S_IFDIR;
+  if (!S_ISDIR(root->i_mode)) {
+    DBGPRINT("[ZARUFS] root is not directory.\n");
+  }
+  sb->s_root = d_make_root(root);
+  if (!sb->s_root) {
+    DBGPRINT("[ZARUFS] Error: failed to make root.\n");
+    ret = -ENOMEM;
+    goto error_mount;
+  }
+  le16_add_cpu(&zsb->s_mnt_count, 1);
+  DBGPRINT("[ZARUFS] zarufs is mounted!\n");
+
   /* debug_print_zarufs_sb(zsb); */
   return 0;
+
+ error_mount:
+  brelse(bh);
 
  error_read_sb:
   kfree(zsi);
   return ret;
 }
 
+
+static void zarufs_put_super_block(struct super_block *sb) {
+  struct zarufs_sb_info *zsi;
+  zsi = ZARUFS_SB(sb);
+  brelse(zsi->s_sbh);
+  sb->s_fs_info = NULL;
+  kfree(zsi);
+}
 
 /* for debug. */
 /* static void debug_print_zarufs_sb(struct zarufs_super_block* zsb) { */

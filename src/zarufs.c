@@ -15,6 +15,7 @@ static struct dentry *zarufs_mount(struct file_system_type *fs_type,
 static struct file_system_type zarufs_fstype = {
   .name     = "zarufs",
   .mount    = zarufs_mount,
+  .kill_sb  = kill_block_super,
   .fs_flags = FS_REQUIRES_DEV,
 };
 
