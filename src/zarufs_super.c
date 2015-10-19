@@ -15,6 +15,23 @@ static int zarufs_fill_super_block(struct super_block *sb,
 static void zarufs_put_super_block(struct super_block *sb);
 
 
+static loff_t zarufs_max_file_size(struct super_block *sb) {
+  int    file_blocks;
+  int    nr_blocks;
+  loff_t max_size;
+
+  file_blocks = ZARUFS_NDIR_BLOCKS;
+  nr_blocks = sb->s_blocksize / sizeof(u32);
+  file_blocks += nr_blocks;
+  file_blocks += nr_blocks * nr_blocks;
+  file_blocks += nr_blocks * nr_blocks * nr_blocks;
+  max_size = file_blocks * sb->s_blocksize;
+  if (MAX_LFS_FILESIZE < max_size) {
+    max_size = MAX_LFS_FILESIZE;
+  }
+  return max_size;
+}
+
 static int zarufs_write_inode(struct inode* inode, struct writeback_control *wbc) {
   DBGPRINT("[ZARUFS] write_inode\n");
   return 0;
