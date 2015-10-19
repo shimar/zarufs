@@ -25,8 +25,7 @@ static struct dentry *zarufs_mount(struct file_system_type *fs_type,
                                    const char *dev_name,
                                    void *data) {
 
-  zarufs_mount_block_dev(fs_type, flags, dev_name, data);
-  return NULL;
+  return zarufs_mount_block_dev(fs_type, flags, dev_name, data);
 }
 
 static int __init init_zarufs(void) {

@@ -25,10 +25,10 @@ static void zarufs_destroy_inode(struct inode* inode) {
   return;
 }
 
-static void zarufs_evict_inode(struct inode* inode) {
-  DBGPRINT("[ZARUFS] evict_inode\n");
-  return;
-}
+/* static void zarufs_evict_inode(struct inode* inode) { */
+/*   DBGPRINT("[ZARUFS] evict_inode\n"); */
+/*   return; */
+/* } */
 
 static int zarufs_sync_fs(struct super_block *sb, int wait) {
   DBGPRINT("[ZARUFS] sync_fs\n");
@@ -55,7 +55,7 @@ static int zarufs_remount_fs(struct super_block* sb, int *len, char *buf) {
   return 0;
 }
 
-static int zarufs_show_options(struct sec_file *sec_file, struct dentry *dentry) {
+static int zarufs_show_options(struct seq_file *seq_file, struct dentry *dentry) {
   DBGPRINT("[ZARUFS] show_options\n");
   return 0;
 }
@@ -65,15 +65,16 @@ static inline struct zarufs_sb_info *ZARUFS_SB(struct super_block *sb) {
 }
 
 static struct super_operations zarufs_super_ops = {
-  .write_inode  = zarufs_write_inode,
+  .destroy_inode = zarufs_destroy_inode,
+  .write_inode   = zarufs_write_inode,
   /* .evict_inode  = zarufs_evict_inode, */
-  .put_super    = zarufs_put_super_block,
-  .sync_fs      = zarufs_sync_fs,
-  .freeze_fs    = zarufs_freeze_fs,
-  .unfreeze_fs  = zarufs_unfreeze_fs,
-  .statfs       = zarufs_statfs,
-  .remount_fs   = zarufs_remount_fs,
-  .show_options = zarufs_show_options,
+  .put_super     = zarufs_put_super_block,
+  .sync_fs       = zarufs_sync_fs,
+  .freeze_fs     = zarufs_freeze_fs,
+  .unfreeze_fs   = zarufs_unfreeze_fs,
+  .statfs        = zarufs_statfs,
+  .remount_fs    = zarufs_remount_fs,
+  .show_options  = zarufs_show_options,
 };
 
 
