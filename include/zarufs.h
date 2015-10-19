@@ -6,6 +6,14 @@
 
 #define ZARUFS_SUPER_MAGIC EXT2_SUPER_MAGIC /* 0xEF53 */
 
+#define ZARUFS_LINK_MAX 32000
+
+#define ZARUFS_NDIR_BLOCKS  (12)
+#define ZARUFS_IND_BLOCK    ZARUFS_NDIR_BLOCKS
+#define ZARUFS_2IND_BLOCK   (ZARUFS_IND_BLOCKS + 1)
+#define ZARUFS_3IND_BLOCK   (ZARUFS_2IND_BLOCKS + 1)
+#define ZARUFS_NR_BLOCK     (ZARUFS_3IND_BLOCKS + 1)
+
 #define ZARUFS_EXT2_BAD_INO      1
 #define ZARUFS_EXT2_ROOT_INO     2
 #define ZARUFS_EXT2_BL_INO       5
@@ -183,6 +191,17 @@ struct zarufs_sb_info {
   // defaults.
   kuid_t         s_resuid;
   kgid_t         s_resgid;
+};
+
+struct ext2_group_desc {
+  __le32 bg_block_bitmap;
+  __le32 bg_inode_bitmap;
+  __le32 bg_inode_table;
+  __le16 bg_free_blocks_count;
+  __le16 bg_free_inodes_count;
+  __le16 bg_used_dirs_count;
+  __le16 bg_pad;
+  __le32 bg_reserved[3];
 };
 
 #endif /* _ZARUFS_H_ */
