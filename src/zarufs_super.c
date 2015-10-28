@@ -117,6 +117,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
   struct inode              *root;
   int                       block_size;
   int                       ret = -EINVAL;
+  unsigned long             sb_block = 1;
 
   // allocate memory to zarufs_sb_info.
   zsi = kzalloc(sizeof(struct zarufs_sb_info), GFP_KERNEL);
@@ -137,23 +138,102 @@ static int zarufs_fill_super_block(struct super_block *sb,
     goto error_read_sb;
   }
   
+  /* read super block. */
   if (!(bh = sb_bread(sb, 1))) {
     DBGPRINT("[ZARUFS] Error: failed to bread super block.\n");
     goto error_read_sb;
   }
 
   zsb = (struct zarufs_super_block*)(bh->b_data);
+  /* check magic number. */
   sb->s_magic = le16_to_cpu(zsb->s_magic);
   if (sb->s_magic != ZARUFS_SUPER_MAGIC) {
     DBGPRINT("[ZARUFS] Error: magic of super block is %lu.\n", sb->s_magic);
     goto error_read_sb;
   }
 
+  /* check revision. */
+  if (EXT2_GOOD_OLD_REV == le32_to_cpu(zsb->s_rev_level)) {
+    DBGPRINT("[ZARUFS] Error: cannot mount old revision\n");
+    goto error_mount;
+  }
+
+  /* setup the super block information. */
   zsi->s_zsb = zsb;
   zsi->s_sbh = bh;
+  zsi->s_sb_block    = sb_block;
+  zsi->s_mount_opt   = le32_to_cpu(zsb->s_default_mount_opts);
+  zsi->s_mount_state = le16_to_cpu(zsb->s_state);
 
+  if (zsi->s_mount_state != EXT2_VALID_FS) {
+    DBGPRINT("[ZARUFS] Error: cannot mount invalid filesystems\n");
+    goto error_mount;
+  }
+
+  if (le16_to_cpu(zsb->s_errors) == EXT2_ERRORS_CONTINUE) {
+    DBGPRINT("[ZARUFS] Error: CONTNUE\n");
+  } else if (le16_to_cpu(zsb->s_errors) == EXT2_ERRORS_PANIC) {
+    DBGPRINT("[ZARUFS] Error: PANIC\n");
+  } else {
+    DBGPRINT("[ZARUFS] Error: READ ONLY\n");
+  }
+
+  if (le32_to_cpu(zsb->s_rev_level) != EXT2_DYNAMIC_REV) {
+    DBGPRINT("[ZARUFS] Error: cannot mount unsupported revision\n");
+    goto error_mount;
+  }
+
+  /* inode disc information cache. */
+  zsi->s_inode_size = le16_to_cpu(zsb->s_inode_size);
+  if (zsi->s_inode_size < 128 ||
+      !is_power_of_2(zsi->s_inode_size) ||
+      (block_size < zsi->s_inode_size)) {
+    DBGPRINT("[ZARUFS] Error: cannot mount unsupported inode size %u\n",
+             zsi->s_inode_size);
+    goto error_mount;
+  }
+
+  zsi->s_first_ino = le32_to_cpu(zsb->s_first_ino);
+  zsi->s_inodes_per_group = le32_to_cpu(zsb->s_inodes_per_group);
+  zsi->s_inodes_per_block = sb->s_blocksize / zsi->s_inode_size;
+  if (zsi->s_inodes_per_block == 0) {
+    DBGPRINT("[ZARUFS] Error: bad inodes per block\n");
+    goto error_mount;
+  }
+
+  zsi->s_itb_per_group = zsi->s_inodes_per_group / zsi->s_inodes_per_block;
+  /* group dist information cache */
+  zsi->s_blocks_per_group = le32_to_cpu(zsb->s_blocks_per_group);
+  if (zsi->s_blocks_per_group == 0) {
+    DBGPRINT("[ZARUFS] Error: bad blocks per block\n");
+    goto error_mount;
+  }
+
+  zsi->s_groups_count = ((le32_to_cpu(zsb->s_blocks_count)
+                          - le32_to_cpu(zsb->s_first_data_block) - 1)
+                         / zsi->s_blocks_per_group) + 1;
+  zsi->s_desc_per_block = sb->s_blocksize / sizeof(struct ext2_group_desc);
+  zsi->s_gdb_count = (zsi->s_groups_count + zsi->s_desc_per_block - 1) / zsi->s_desc_per_block;
+
+  /* fragment disc information cache. */
+  zsi->s_frag_size = 1024 << le32_to_cpu(zsb->s_log_frag_size);
+  if (zsi->s_frag_size == 0) {
+    DBGPRINT("[ZARUFS] Error: bad fragment size\n");
+    goto error_mount;
+  }
+
+  zsi->s_frags_per_block = sb->s_blocksize / zsi->s_frag_size;
+  zsi->s_frags_per_group = le32_to_cpu(zsb->s_frags_per_group);
+
+  /* default disc information cache. */
+  zsi->s_resuid = make_kuid(&init_user_ns, le16_to_cpu(zsb->s_def_resuid));
+  zsi->s_resgid = make_kgid(&init_user_ns, le16_to_cpu(zsb->s_def_resgid));
+  
   // setup vfs super block.
   sb->s_op = &zarufs_super_ops;
+  sb->s_maxbytes = zarufs_max_file_size(sb);
+  sb->s_max_links = ZARUFS_LINK_MAX;
+
   DBGPRINT("[ZARUFS] max file size=%lu\n", (unsigned long) sb->s_maxbytes);
   sb->s_fs_info = (void*) zsi;
   root = iget_locked(sb, ZARUFS_EXT2_ROOT_INO);
@@ -192,7 +272,19 @@ static int zarufs_fill_super_block(struct super_block *sb,
 
 static void zarufs_put_super_block(struct super_block *sb) {
   struct zarufs_sb_info *zsi;
+  int                   i;
+
   zsi = ZARUFS_SB(sb);
+
+  /* release buffer cache for block group descripter. */
+  for (i = 0; i < zsi->s_gdb_count; i++) {
+    if (zsi->s_group_desc[i]) {
+      brelse(zsi->s_group_desc[i]);
+    }
+  }
+  kfree(zsi->s_group_desc);
+
+  /* release buffer cache for super block. */
   brelse(zsi->s_sbh);
   sb->s_fs_info = NULL;
   kfree(zsi);
