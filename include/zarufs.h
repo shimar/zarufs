@@ -10,9 +10,9 @@
 
 #define ZARUFS_NDIR_BLOCKS  (12)
 #define ZARUFS_IND_BLOCK    ZARUFS_NDIR_BLOCKS
-#define ZARUFS_2IND_BLOCK   (ZARUFS_IND_BLOCKS + 1)
-#define ZARUFS_3IND_BLOCK   (ZARUFS_2IND_BLOCKS + 1)
-#define ZARUFS_NR_BLOCK     (ZARUFS_3IND_BLOCKS + 1)
+#define ZARUFS_2IND_BLOCK   (ZARUFS_IND_BLOCK + 1)
+#define ZARUFS_3IND_BLOCK   (ZARUFS_2IND_BLOCK + 1)
+#define ZARUFS_NR_BLOCKS    (ZARUFS_3IND_BLOCK + 1)
 
 #define ZARUFS_EXT2_BAD_INO      1
 #define ZARUFS_EXT2_ROOT_INO     2
@@ -95,6 +95,91 @@
 #define EXT2_MOUNT_USRQUOTA     (0x00002000)
 #define EXT2_MOUNT_GRPQUOTA     (0x00004000)
 #define EXT2_MOUNT_RESERVATION  (0x00008000)
+
+struct zarufs_inode {
+  __le16 i_mode;
+  __le16 i_uid;
+  __le16 i_size;
+  __le16 i_atime;
+  __le16 i_ctime;
+  __le16 i_mtime;
+  __le16 i_dtime;
+  __le16 i_gid;
+  __le16 i_links_count;
+  __le16 i_blocks;
+  __le16 i_flags;
+
+  union {
+    struct {
+      __le32 l_i_reserved1;
+    } linux1;
+
+    struct {
+      __le32 h_i_translator;
+    } hurd1;
+
+    struct {
+      __le32 m_i_reserved1;
+    } masix1;
+  } osd1;
+
+  __le32 i_block[ZARUFS_NR_BLOCKS];
+  __le32 i_generation;
+  __le32 i_file_acl;
+  __le32 i_dir_acl;
+  __le32 i_faddr;
+
+  union {
+    struct {
+      __u8   l_i_frag;
+      __u8   l_i_fsize;
+      __u16  i_pad1;
+      __le16 l_i_uid_high;
+      __le16 l_i_gid_high;
+      __u32  l_i_reserved2;
+    } linux2;
+
+    struct {
+      __u8   hl_i_frag;
+      __u8   h_i_fsize;
+      __u16  h_i_mode_high;
+      __le16 h_i_uid_high;
+      __le16 h_i_gid_high;
+      __u32  h_i_reserved2;
+    } hurd2;
+
+    struct {
+      __u8   m_i_frag;
+      __u8   m_i_fsize;
+      __u16  m_pad1;
+      __u32  m_i_reserved2[2];
+    } masix2;
+  } osd2;
+};
+
+/* i_flags */
+#define ZARUFS_SECRM_FL        FS_SECRM_FL     /* secure deletion */
+#define ZARUFS_UNRM_FL         FS_UNRM_FL      /* undelete */
+#define ZARUFS_COMPR_FL        FS_COMPR_FL     /* compress file */
+#define ZARUFS_SYNC_FL         FS_SYNC_FL      /* synchronous updates */
+#define ZARUFS_IMMUTABLE_FL    FS_IMMUTABLE_FL /* immutable file */
+#define ZARUFS_APPEND_FL       FS_APPEND_FL    /* write to file may only append */
+#define ZARUFS_NODUMP_FL       FS_NODUMP_FL    /* do not dump file */
+#define ZARUFS_NOATIME_FL      FS_NOATIME_FL   /* do not udpate atime */
+/* i_flags reserved for compression usage */
+#define ZARUFS_DIRTY_FL        FS_DIRTY_FL
+#define ZARUFS_COMPRBLK_FL     FS_COMPRBLK_FL /* on or more compressed cluster */
+#define ZARUFS_NOCOMP_FL       FS_NOCOMP_FL   /* do not compress */
+#define ZARUFS_ECOMPR_FL       FS_ECOMPR_FL   /* compression error */
+/* i_flags end compression flags */
+#define ZARUFS_BTREE_FL        FS_BTREE_FL        /* btree format dir */
+#define ZARUFS_INDEX_FL        FS_INDEX_FL        /* hash-indexed directory */
+#define ZARUFS_IMAGIC_FL       FS_IMAGIC_FL       /* AFS directory */
+#define ZARUFS_JOURNAL_DATA_FL FS_JOURNAL_DATA_FL /* for ext3 */
+#define ZARUFS_NOTAIL_FL       FS_NOTAIL_FL       /* file tail should not be merged */
+#define ZARUFS_DIRSYNC_FL      FS_DIRSYCN_FL      /* dirsync behaviour (directories only) */
+#define ZARUFS_TOPDIR_FL       FS_TOPDIR_FL       /* top of directory herarchies */
+#define ZARUFS_RESERVED_FL     FS_RESERVED_FL     /* reserved for ext2 lib */
 
 struct zarufs_super_block {
   __le32 s_inodes_count;
