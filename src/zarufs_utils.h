@@ -15,5 +15,4 @@
     printk(KERN_ERR msg, ##args);              \
 } while(0)
 
-
 #endif //_ZARUFS_UTILS_H_

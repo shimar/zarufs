@@ -204,4 +204,17 @@ struct ext2_group_desc {
   __le32 bg_reserved[3];
 };
 
+static inline struct zarufs_sb_info *ZARUFS_SB(struct super_block *sb) {
+  return ((struct zarufs_sb_info*) sb->s_fs_info);
+}
+
+static inline unsigned long
+zarufs_get_first_block_num(struct super_block *sb,
+                           unsigned long group_no) {
+  unsigned long first_block_num;
+  first_block_num = group_no * le32_to_cpu(ZARUFS_SB(sb)->s_blocks_per_group)
+    + le32_to_cpu(ZARUFS_SB(sb)->s_zsb->s_first_data_block);
+  return (first_block_num);
+}
+
 #endif /* _ZARUFS_H_ */

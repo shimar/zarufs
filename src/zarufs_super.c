@@ -6,13 +6,18 @@
 #include "../include/zarufs.h"
 #include "zarufs_super.h"
 #include "zarufs_utils.h"
-
+#include "zarufs_block.h"
 
 static int zarufs_fill_super_block(struct super_block *sb,
                                    void *data,
                                    int silent);
 
 static void zarufs_put_super_block(struct super_block *sb);
+
+static unsigned long
+zarufs_get_descriptor_location(struct super_block *sb,
+                               unsigned long logic_sb_block,
+                               int num_bg);
 
 
 static loff_t zarufs_max_file_size(struct super_block *sb) {
@@ -77,10 +82,6 @@ static int zarufs_show_options(struct seq_file *seq_file, struct dentry *dentry)
   return 0;
 }
 
-static inline struct zarufs_sb_info *ZARUFS_SB(struct super_block *sb) {
-  return ((struct zarufs_sb_info*) sb->s_fs_info);
-}
-
 static struct super_operations zarufs_super_ops = {
   .destroy_inode = zarufs_destroy_inode,
   .write_inode   = zarufs_write_inode,
@@ -117,6 +118,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
   struct inode              *root;
   int                       block_size;
   int                       ret = -EINVAL;
+  int                       i;
   unsigned long             sb_block = 1;
 
   // allocate memory to zarufs_sb_info.
@@ -126,6 +128,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
     ret = -ENOMEM;
     return ret;
   }
+  sb->s_fs_info = (void*) zsi;
 
   // set device's block size and size bits to super block.
   block_size = sb_min_blocksize(sb, BLOCK_SIZE);
@@ -228,14 +231,61 @@ static int zarufs_fill_super_block(struct super_block *sb,
   /* default disc information cache. */
   zsi->s_resuid = make_kuid(&init_user_ns, le16_to_cpu(zsb->s_def_resuid));
   zsi->s_resgid = make_kgid(&init_user_ns, le16_to_cpu(zsb->s_def_resgid));
-  
+
+  /* read block group descriptor table. */
+  zsi->s_group_desc = kmalloc(zsi->s_gdb_count * sizeof(struct buffer_head*), GFP_KERNEL);
+  if (!zsi->s_group_desc) {
+    ZARUFS_ERROR("[ZARUFS] Error: alloc memery for group desc is failed.\n");
+    goto error_mount;
+  }
+  for (i = 0; i < zsi->s_gdb_count; i++) {
+    unsigned long block;
+    block = zarufs_get_descriptor_location(sb, sb_block, i);
+    if (!(zsi->s_group_desc[i] = sb_bread(sb, block))) {
+      ZARUFS_ERROR("[ZARUFS] Error: cannot read block group descriptor[group=%i]\n", i);
+      goto error_mount_phase2;
+    }
+  }
+
+  /* sanity check for group descriptors. */
+  for (i = 0; i < zsi->s_groups_count; i++) {
+    struct ext2_group_desc *gdesc;
+    unsigned long first_block;
+    unsigned long last_block;
+    unsigned long ar_block;
+    DBGPRINT("[ZARUFS] Block count %d.\n", i);
+    if (!(gdesc = zarufs_get_group_descriptor(sb, i))) {
+      goto error_mount_phase2;
+    }
+
+    first_block = zarufs_get_first_block_num(sb, i);
+    if (i == (zsi->s_groups_count - 1)) {
+      last_block = le32_to_cpu(zsb->s_blocks_count) - 1;
+    } else {
+      last_block = first_block + (zsb->s_blocks_per_group - 1);
+    }
+    DBGPRINT("[ZARUFS] first: %lu, last = %lu\n", first_block, last_block);
+    ar_block = le32_to_cpu(gdesc->bg_block_bitmap);
+    if ((ar_block < first_block) || (last_block < ar_block)) {
+      ZARUFS_ERROR("[ZARUFS] Error: block num of block bitmap is");
+      ZARUFS_ERROR(" insanity [ group=%d, first=%lu, block=%lu, last=%lu ]\n", i, first_block, ar_block, last_block);
+      goto error_mount_phase2;
+    }
+
+    ar_block = le32_to_cpu(gdesc->bg_inode_table);
+    if ((ar_block < first_block) || (last_block < ar_block)) {
+      ZARUFS_ERROR("[ZARUFS] Error: block num of inode table is");
+      ZARUFS_ERROR(" insanity [ group=%d, first=%lu, block=%lu, last=%lu ]\n", i, first_block, ar_block, last_block);
+      goto error_mount_phase2;
+    }
+  }
+
   // setup vfs super block.
   sb->s_op = &zarufs_super_ops;
   sb->s_maxbytes = zarufs_max_file_size(sb);
   sb->s_max_links = ZARUFS_LINK_MAX;
 
   DBGPRINT("[ZARUFS] max file size=%lu\n", (unsigned long) sb->s_maxbytes);
-  sb->s_fs_info = (void*) zsi;
   root = iget_locked(sb, ZARUFS_EXT2_ROOT_INO);
   if (IS_ERR(root)) {
     DBGPRINT("[ZARUFS] Error: failed to get root inode.\n");
@@ -245,10 +295,12 @@ static int zarufs_fill_super_block(struct super_block *sb,
 
   unlock_new_inode(root);
   inc_nlink(root);
+
   root->i_mode = S_IFDIR;
   if (!S_ISDIR(root->i_mode)) {
     DBGPRINT("[ZARUFS] root is not directory.\n");
   }
+
   sb->s_root = d_make_root(root);
   if (!sb->s_root) {
     DBGPRINT("[ZARUFS] Error: failed to make root.\n");
@@ -260,6 +312,12 @@ static int zarufs_fill_super_block(struct super_block *sb,
 
   /* debug_print_zarufs_sb(zsb); */
   return 0;
+
+ error_mount_phase2:
+  for (i = 0; i < zsi->s_gdb_count; i++) {
+    brelse(zsi->s_group_desc[i]);
+  }
+  kfree(zsi->s_group_desc);
 
  error_mount:
   brelse(bh);
@@ -299,3 +357,28 @@ static void zarufs_put_super_block(struct super_block *sb) {
 /*   DBGPRINT("[ZARUFS] s_inodes_count = %d\n", value); */
 /*   return; */
 /* } */
+static unsigned long
+zarufs_get_descriptor_location(struct super_block *sb,
+                               unsigned long logic_sb_block,
+                               int num_bg) {
+  struct zarufs_sb_info *zsi;
+  unsigned long         bg;
+  unsigned long         first_meta_bg;
+  int                   has_super;
+
+  zsi = ZARUFS_SB(sb);
+  has_super = 0;
+  first_meta_bg = le32_to_cpu(zsi->s_zsb->s_first_meta_bg);
+  if ((zsi->s_zsb->s_feature_compat &
+       cpu_to_le32(EXT2_FEATURE_INCOMPAT_META_BG)) ||
+      (num_bg < first_meta_bg)) {
+    return(logic_sb_block + 1);
+  }
+  bg = zsi->s_desc_per_block * num_bg;
+  if (zarufs_has_bg_super(sb, bg)) {
+    has_super = 1;
+  }
+  return(zarufs_get_first_block_num(sb, bg) + has_super);
+}
+
+
