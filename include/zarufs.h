@@ -157,6 +157,21 @@ struct zarufs_inode {
   } osd2;
 };
 
+struct zarufs_inode_info {
+  __le32       i_data[ZARUFS_NR_BLOCKS];
+  __u32        i_flags;
+  __u32        i_faddr;
+  __u8         i_frag_no;
+  __u8         i_frag_size;
+  __u16        i_state;
+  __u32        i_file_acl;
+  __u32        i_dir_acl;
+  __u32        i_dtime;
+  __u32        i_block_group;
+  __u32        i_dir_start_lookup;
+  struct inode vfs_inode;
+};
+
 /* i_flags */
 #define ZARUFS_SECRM_FL        FS_SECRM_FL     /* secure deletion */
 #define ZARUFS_UNRM_FL         FS_UNRM_FL      /* undelete */
