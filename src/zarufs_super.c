@@ -8,6 +8,9 @@
 #include "zarufs_utils.h"
 #include "zarufs_block.h"
 
+/* inode cache. */
+static struct kmem_cache *zarufs_inode_cachep;
+
 static int zarufs_fill_super_block(struct super_block *sb,
                                    void *data,
                                    int silent);
@@ -19,6 +22,7 @@ zarufs_get_descriptor_location(struct super_block *sb,
                                unsigned long logic_sb_block,
                                int num_bg);
 
+static void zarufs_init_inode_once(void *object);
 
 static loff_t zarufs_max_file_size(struct super_block *sb) {
   int    file_blocks;
@@ -381,4 +385,25 @@ zarufs_get_descriptor_location(struct super_block *sb,
   return(zarufs_get_first_block_num(sb, bg) + has_super);
 }
 
+static void
+zarufs_init_inode_once(void *object) {
+  struct zarufs_inode_info *ei = (struct zarufs_inode_info*)object;
+  inode_init_once(&ei->vfs_inode);
+}
 
+int zarufs_init_inode_cache(void) {
+  zarufs_inode_cachep = kmem_cache_create("zarufs_inode_cachep",
+                                          sizeof(struct zarufs_inode_info),
+                                          0,
+                                          (SLAB_RECLAIM_ACCOUNT |
+                                           SLAB_MEM_SPREAD),
+                                          zarufs_init_inode_once);
+  if (!zarufs_inode_cachep) {
+    return (-ENOMEM);
+  }
+  return (0);
+}
+
+void zarufs_destroy_inode_cache(void) {
+  kmem_cache_destroy(zarufs_inode_cachep);
+}
