@@ -18,6 +18,9 @@ static struct inode
 *zarufs_alloc_inode(struct super_block *sb);
 
 static void
+zarufs_destroy_inode(struct inode *inode);
+
+static void
 zarufs_put_super_block(struct super_block *sb);
 
 static unsigned long
@@ -25,7 +28,8 @@ zarufs_get_descriptor_location(struct super_block *sb,
                                unsigned long logic_sb_block,
                                int num_bg);
 
-static void zarufs_init_inode_once(void *object);
+static void
+zarufs_init_inode_once(void *object);
 
 static loff_t zarufs_max_file_size(struct super_block *sb) {
   int    file_blocks;
@@ -61,8 +65,8 @@ static int zarufs_write_inode(struct inode* inode, struct writeback_control *wbc
 }
 
 static void zarufs_destroy_inode(struct inode* inode) {
-  DBGPRINT("[ZARUFS] destroy_inode\n");
-  return;
+  struct zarufs_inode_info *zi = ZARUFS_I(inode);
+  kmem_cache_free(zarufs_inode_cachep, zi);
 }
 
 /* static void zarufs_evict_inode(struct inode* inode) { */
