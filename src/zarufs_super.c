@@ -14,8 +14,11 @@ static struct kmem_cache *zarufs_inode_cachep;
 static int zarufs_fill_super_block(struct super_block *sb,
                                    void *data,
                                    int silent);
+static struct inode
+*zarufs_alloc_inode(struct super_block *sb);
 
-static void zarufs_put_super_block(struct super_block *sb);
+static void
+zarufs_put_super_block(struct super_block *sb);
 
 static unsigned long
 zarufs_get_descriptor_location(struct super_block *sb,
@@ -39,6 +42,17 @@ static loff_t zarufs_max_file_size(struct super_block *sb) {
     max_size = MAX_LFS_FILESIZE;
   }
   return max_size;
+}
+
+static struct inode
+*zarufs_alloc_inode(struct super_block *sb) {
+  struct zarufs_inode_info *zi;
+  zi = (struct zarufs_inode_info *) kmem_cache_alloc(zarufs_inode_cachep, GFP_KERNEL);
+  if (!zi) {
+    return (NULL);
+  }
+  zi->vfs_inode.i_version = 1;
+  return (&zi->vfs_inode);
 }
 
 static int zarufs_write_inode(struct inode* inode, struct writeback_control *wbc) {
@@ -87,6 +101,7 @@ static int zarufs_show_options(struct seq_file *seq_file, struct dentry *dentry)
 }
 
 static struct super_operations zarufs_super_ops = {
+  .alloc_inode   = zarufs_alloc_inode,
   .destroy_inode = zarufs_destroy_inode,
   .write_inode   = zarufs_write_inode,
   /* .evict_inode  = zarufs_evict_inode, */
