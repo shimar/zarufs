@@ -317,4 +317,9 @@ zarufs_get_first_block_num(struct super_block *sb,
   return (first_block_num);
 }
 
+static inline struct zarufs_inode_info
+*ZARUFS_I(struct inode *inode) {
+  return (container_of(inode, struct zarufs_inode_info, vfs_inode));
+}
+
 #endif /* _ZARUFS_H_ */
