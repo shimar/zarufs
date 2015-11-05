@@ -96,7 +96,7 @@
 #define EXT2_MOUNT_GRPQUOTA     (0x00004000)
 #define EXT2_MOUNT_RESERVATION  (0x00008000)
 
-struct zarufs_inode {
+struct ext2_inode {
   __le16 i_mode;
   __le16 i_uid;
   __le16 i_size;
@@ -173,28 +173,28 @@ struct zarufs_inode_info {
 };
 
 /* i_flags */
-#define ZARUFS_SECRM_FL        FS_SECRM_FL     /* secure deletion */
-#define ZARUFS_UNRM_FL         FS_UNRM_FL      /* undelete */
-#define ZARUFS_COMPR_FL        FS_COMPR_FL     /* compress file */
-#define ZARUFS_SYNC_FL         FS_SYNC_FL      /* synchronous updates */
-#define ZARUFS_IMMUTABLE_FL    FS_IMMUTABLE_FL /* immutable file */
-#define ZARUFS_APPEND_FL       FS_APPEND_FL    /* write to file may only append */
-#define ZARUFS_NODUMP_FL       FS_NODUMP_FL    /* do not dump file */
-#define ZARUFS_NOATIME_FL      FS_NOATIME_FL   /* do not udpate atime */
+#define EXT2_SECRM_FL        FS_SECRM_FL     /* secure deletion */
+#define EXT2_UNRM_FL         FS_UNRM_FL      /* undelete */
+#define EXT2_COMPR_FL        FS_COMPR_FL     /* compress file */
+#define EXT2_SYNC_FL         FS_SYNC_FL      /* synchronous updates */
+#define EXT2_IMMUTABLE_FL    FS_IMMUTABLE_FL /* immutable file */
+#define EXT2_APPEND_FL       FS_APPEND_FL    /* write to file may only append */
+#define EXT2_NODUMP_FL       FS_NODUMP_FL    /* do not dump file */
+#define EXT2_NOATIME_FL      FS_NOATIME_FL   /* do not udpate atime */
 /* i_flags reserved for compression usage */
-#define ZARUFS_DIRTY_FL        FS_DIRTY_FL
-#define ZARUFS_COMPRBLK_FL     FS_COMPRBLK_FL /* on or more compressed cluster */
-#define ZARUFS_NOCOMP_FL       FS_NOCOMP_FL   /* do not compress */
-#define ZARUFS_ECOMPR_FL       FS_ECOMPR_FL   /* compression error */
+#define EXT2_DIRTY_FL        FS_DIRTY_FL
+#define EXT2_COMPRBLK_FL     FS_COMPRBLK_FL /* on or more compressed cluster */
+#define EXT2_NOCOMP_FL       FS_NOCOMP_FL   /* do not compress */
+#define EXT2_ECOMPR_FL       FS_ECOMPR_FL   /* compression error */
 /* i_flags end compression flags */
-#define ZARUFS_BTREE_FL        FS_BTREE_FL        /* btree format dir */
-#define ZARUFS_INDEX_FL        FS_INDEX_FL        /* hash-indexed directory */
-#define ZARUFS_IMAGIC_FL       FS_IMAGIC_FL       /* AFS directory */
-#define ZARUFS_JOURNAL_DATA_FL FS_JOURNAL_DATA_FL /* for ext3 */
-#define ZARUFS_NOTAIL_FL       FS_NOTAIL_FL       /* file tail should not be merged */
-#define ZARUFS_DIRSYNC_FL      FS_DIRSYCN_FL      /* dirsync behaviour (directories only) */
-#define ZARUFS_TOPDIR_FL       FS_TOPDIR_FL       /* top of directory herarchies */
-#define ZARUFS_RESERVED_FL     FS_RESERVED_FL     /* reserved for ext2 lib */
+#define EXT2_BTREE_FL        FS_BTREE_FL        /* btree format dir */
+#define EXT2_INDEX_FL        FS_INDEX_FL        /* hash-indexed directory */
+#define EXT2_IMAGIC_FL       FS_IMAGIC_FL       /* AFS directory */
+#define EXT2_JOURNAL_DATA_FL FS_JOURNAL_DATA_FL /* for ext3 */
+#define EXT2_NOTAIL_FL       FS_NOTAIL_FL       /* file tail should not be merged */
+#define EXT2_DIRSYNC_FL      FS_DIRSYNC_FL      /* dirsync behaviour (directories only) */
+#define EXT2_TOPDIR_FL       FS_TOPDIR_FL       /* top of directory herarchies */
+#define EXT2_RESERVED_FL     FS_RESERVED_FL     /* reserved for ext2 lib */
 
 struct zarufs_super_block {
   __le32 s_inodes_count;

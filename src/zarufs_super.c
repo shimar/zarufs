@@ -7,6 +7,7 @@
 #include "zarufs_super.h"
 #include "zarufs_utils.h"
 #include "zarufs_block.h"
+#include "zarufs_inode.h"
 
 /* inode cache. */
 static struct kmem_cache *zarufs_inode_cachep;
@@ -309,15 +310,16 @@ static int zarufs_fill_super_block(struct super_block *sb,
   sb->s_max_links = ZARUFS_LINK_MAX;
 
   DBGPRINT("[ZARUFS] max file size=%lu\n", (unsigned long) sb->s_maxbytes);
-  root = iget_locked(sb, ZARUFS_EXT2_ROOT_INO);
+  root = zarufs_get_vfs_inode(sb, ZARUFS_EXT2_ROOT_INO);
+  /* root = iget_locked(sb, ZARUFS_EXT2_ROOT_INO); */
   if (IS_ERR(root)) {
     DBGPRINT("[ZARUFS] Error: failed to get root inode.\n");
     ret = PTR_ERR(root);
     goto error_mount;
   }
 
-  unlock_new_inode(root);
-  inc_nlink(root);
+  /* unlock_new_inode(root); */
+  /* inc_nlink(root); */
 
   root->i_mode = S_IFDIR;
   if (!S_ISDIR(root->i_mode)) {
