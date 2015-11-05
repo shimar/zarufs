@@ -29,12 +29,22 @@ static struct dentry *zarufs_mount(struct file_system_type *fs_type,
 }
 
 static int __init init_zarufs(void) {
+  int error;
   DBGPRINT("[ZARUFS] Hello, World.\n");
-  return register_filesystem(&zarufs_fstype);
+  error = zarufs_init_inode_cache();
+  if (error) {
+    return (error);
+  }
+  error = register_filesystem(&zarufs_fstype);
+  if (error) {
+    zarufs_destroy_inode_cache();
+  }
+  return(error);
 }
 
 static void __exit exit_zarufs(void) {
   DBGPRINT("[ZARUFS] GoodBye!.\n");
+  zarufs_destroy_inode_cache();
   unregister_filesystem(&zarufs_fstype);
   return;
 }
