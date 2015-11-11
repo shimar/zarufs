@@ -6,6 +6,7 @@
 #include "zarufs_utils.h"
 #include "zarufs_block.h"
 #include "zarufs_inode.h"
+#include "zarufs_dir.h"
 
 static struct ext2_inode*
 zarufs_get_ext2_inode(struct super_block *sb,
@@ -147,6 +148,9 @@ struct inode
 
   if (S_ISREG(inode->i_mode)) {
   } else if (S_ISDIR(inode->i_mode)) {
+    DBGPRINT("[ZARUFS] get directory inode!\n");
+    inode->i_fop = &zarufs_dir_operations;
+    inode->i_op  = &zarufs_dir_inode_operations;
   } else if (S_ISLNK(inode->i_mode)) {
   } else {
   }

@@ -2,16 +2,35 @@
 #include <linux/fs.h>
 #include "../include/zarufs.h"
 #include "zarufs_utils.h"
-#include "zarufs_inode.h"
 
-static int
+int
 zarufs_read_dir(struct file *file, struct dir_context *ctx);
 
-static struct dentry*
+struct dentry*
 zarufs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags);
 
+int
+zarufs_read_dir(struct file *file, struct dir_context *ctx) {
+  if (ctx->pos == 0) {
+    DBGPRINT("[ZARUFS] Read Dir .(dot)!\n");
+    if (!dir_emit_dot(file, ctx)) {
+      ZARUFS_ERROR("[ZARUFS] Cannot emit\".\" directory entry.\n");
+      return (-1);
+    }
+    ctx->pos = 1;
+  }
+  if (ctx->pos == 1) {
+    DBGPRINT("[ZARUFS] Read Dir ..(dot dot)!\n");
+    if (!dir_emit_dotdot(file, ctx)) {
+      ZARUFS_ERROR("[ZARUFS] Cannot emit\"..\" directory entry.\n");
+      return (-1);
+    }
+    ctx->pos = 2;
+  }
+  return (0);
+}
 
-const struct file_operations zarufs_dir_operations = {
+struct file_operations zarufs_dir_operations = {
   .iterate = zarufs_read_dir,
 };
 
@@ -81,7 +100,14 @@ zarufs_tmp_file(struct inode *inode, struct dentry *d, umode_t mode) {
   return (0);
 }
 
-const struct inode_operations zarufs_dir_inode_operations = {
+
+struct dentry*
+zarufs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
+  DBGPRINT("[ZARUFS] LOOKUP in directory!\n");
+  return (NULL);
+}
+
+struct inode_operations zarufs_dir_inode_operations = {
   .create = zarufs_create,
   .lookup = zarufs_lookup,
   .link   = zarufs_link,
@@ -95,30 +121,3 @@ const struct inode_operations zarufs_dir_inode_operations = {
   .get_acl = zarufs_get_acl,
   .tmpfile = zarufs_tmp_file,
 };
-
-static int
-zarufs_read_dir(struct file *file, struct dir_context *ctx) {
-  if (ctx->pos == 0) {
-    DBGPRINT("[ZARUFS] Read Dir .(dot)!\n");
-    if (!dir_emit_dot(file, ctx)) {
-      ZARUFS_ERROR("[ZARUFS] Cannot emit\".\" directory entry.\n");
-      return (-1);
-    }
-    ctx->pos = 1;
-  }
-  if (ctx->pos == 1) {
-    DBGPRINT("[ZARUFS] Read Dir ..(dot dot)!\n");
-    if (!dir_emit_dotdot(file, ctx)) {
-      ZARUFS_ERROR("[ZARUFS] Cannot emit\"..\" directory entry.\n");
-      return (-1);
-    }
-    ctx->pos = 2;
-  }
-  return (0);
-}
-
-static struct dentry*
-zarufs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
-  DBGPRINT("[ZARUFS] LOOKUP in directory!\n");
-  return (0);
-}

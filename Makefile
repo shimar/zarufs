@@ -1,7 +1,7 @@
 ZARUFS_SRC = src/zarufs.c \
+						 src/zarufs_super.c \
 	           src/zarufs_block.c \
 	           src/zarufs_inode.c \
-						 src/zarufs_super.c \
 	           src/zarufs_dir.c
 
 obj-m += zarufs.o
