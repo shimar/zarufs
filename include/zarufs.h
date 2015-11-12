@@ -304,6 +304,26 @@ struct ext2_group_desc {
   __le32 bg_reserved[3];
 };
 
+struct ext2_dir_entry {
+  __le32 inode;
+  __le16 rec_len;
+  __u8   name_len;
+  __u8   file_type;
+  char   name[];
+};
+
+enum {
+  EXT2_FT_UNKOWN   = 0,
+  EXT2_FT_REG_FILE = 1,
+  EXT2_FT_DIR      = 2,
+  EXT2_FT_CHRDEV   = 3,
+  EXT2_FT_BLKDEV   = 4,
+  EXT2_FT_FIFO     = 5,
+  EXT2_FT_SOCK     = 6,
+  EXT2_FT_SYMLINK  = 7,
+  EXT2_FT_MAX
+};
+
 static inline struct zarufs_sb_info *ZARUFS_SB(struct super_block *sb) {
   return ((struct zarufs_sb_info*) sb->s_fs_info);
 }
