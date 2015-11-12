@@ -313,7 +313,7 @@ struct ext2_dir_entry {
 };
 
 enum {
-  EXT2_FT_UNKOWN   = 0,
+  EXT2_FT_UNKNOWN  = 0,
   EXT2_FT_REG_FILE = 1,
   EXT2_FT_DIR      = 2,
   EXT2_FT_CHRDEV   = 3,
