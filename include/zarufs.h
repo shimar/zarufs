@@ -99,15 +99,15 @@
 struct ext2_inode {
   __le16 i_mode;
   __le16 i_uid;
-  __le16 i_size;
-  __le16 i_atime;
-  __le16 i_ctime;
-  __le16 i_mtime;
-  __le16 i_dtime;
+  __le32 i_size;
+  __le32 i_atime;
+  __le32 i_ctime;
+  __le32 i_mtime;
+  __le32 i_dtime;
   __le16 i_gid;
   __le16 i_links_count;
-  __le16 i_blocks;
-  __le16 i_flags;
+  __le32 i_blocks;
+  __le32 i_flags;
 
   union {
     struct {
@@ -142,7 +142,7 @@ struct ext2_inode {
     struct {
       __u8   hl_i_frag;
       __u8   h_i_fsize;
-      __u16  h_i_mode_high;
+      __le16 h_i_mode_high;
       __le16 h_i_uid_high;
       __le16 h_i_gid_high;
       __u32  h_i_reserved2;
