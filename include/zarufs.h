@@ -169,6 +169,7 @@ struct zarufs_inode_info {
   __u32        i_dtime;
   __u32        i_block_group;
   __u32        i_dir_start_lookup;
+  rwlock_t     i_meta_lock;
   struct inode vfs_inode;
 };
 
