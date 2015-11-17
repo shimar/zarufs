@@ -74,8 +74,26 @@ zarufs_tmp_file(struct inode *inode, struct dentry *d, umode_t mode) {
 
 struct dentry*
 zarufs_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags) {
-  DBGPRINT("[ZARUFS] LOOKUP in directory!\n");
-  return (NULL);
+  struct inode *inode;
+  ino_t        ino;
+
+  if (ZARUFS_NAME_LEN < dentry->d_name.len) {
+    return(ERR_PTR(-ENAMETOOLONG));
+  }
+
+  DBGPRINT("[ZARUFS] LOOKUP %s!\n", dentry->d_name.name);
+  ino = zarufs_get_ino_by_name(dir, &dentry->d_name);
+
+  inode = NULL;
+  if (ino) {
+    inode = zarufs_get_vfs_inode(dir->i_sb, ino);
+    if (inode == ERR_PTR(-ESTALE)) {
+      ZARUFS_ERROR("[ZARUFS] %s:deleted inode referenced.\n", __func__);
+      return(ERR_PTR(-EIO));
+    }
+  }
+      
+  return (d_splice_alias(inode, dentry));
 }
 
 const struct inode_operations zarufs_dir_inode_operations = {

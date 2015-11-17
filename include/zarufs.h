@@ -19,6 +19,8 @@
 #define ZARUFS_EXT2_BL_INO       5
 #define ZARUFS_EXT2_UNDER_DIR_NO 6
 
+#define ZARUFS_NAME_LEN          255
+
 /* defines for s_state. */
 #define EXT2_VALID_FS (1)
 #define EXT2_ERROR_FS (2)
@@ -95,6 +97,8 @@
 #define EXT2_MOUNT_USRQUOTA     (0x00002000)
 #define EXT2_MOUNT_GRPQUOTA     (0x00004000)
 #define EXT2_MOUNT_RESERVATION  (0x00008000)
+
+#define ZARUFS_DIR_REC_LEN(name_len) (((name_len) + 8 + (4 - 1)) & ~(4 - 1))
 
 struct ext2_inode {
   __le16 i_mode;

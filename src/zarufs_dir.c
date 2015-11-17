@@ -144,3 +144,86 @@ zarufs_get_page_last_byte(struct inode *inode, unsigned long page_nr) {
   }
   return (last_byte);
 }
+
+ino_t
+zarufs_get_ino_by_name(struct inode *dir, struct qstr *child) {
+  struct ext2_dir_entry *dent;
+  struct page           *page;
+  ino_t                 ino;
+
+  dent = zarufs_find_dir_entry(dir, child, &page);
+  if (dent) {
+    ino = le32_to_cpu(dent->inode);
+    zarufs_put_dir_page_cache(page);
+  } else {
+    ino = 0;
+  }
+  return(ino);
+}
+
+static inline int
+zarufs_strcmp(int len, const char* const name, struct ext2_dir_entry *dent) {
+  if (len != dent->name_len) {
+    return (0);
+  }
+
+  if (!dent->inode) {
+    return (0);
+  }
+
+  return(!memcmp(name, dent->name, len));
+}
+
+struct ext2_dir_entry*
+zarufs_find_dir_entry(struct inode *dir,
+                      struct qstr  *child,
+                      struct page  **res_page) {
+  struct page           *page;
+  struct ext2_dir_entry *dent;
+  unsigned long         rec_len;
+  unsigned long         page_index;
+  const char            *name = child->name;
+  int                   namelen;
+
+  namelen = child->len;
+  rec_len = ZARUFS_DIR_REC_LEN(namelen);
+
+  for (page_index = 0;
+       page_index < get_dir_num_pages(dir);
+       page_index++) {
+    char *start;
+    char *end;
+
+    page = (struct page*) zarufs_get_dir_page_cache(dir, page_index);
+    if (IS_ERR(page)) {
+      ZARUFS_ERROR("[ZARUFS] %s: bad page [%lu]\n", __func__, page_index);
+      goto not_found;
+    }
+
+    start = (char*) page_address((const struct page*) page);
+    end   = start + zarufs_get_page_last_byte(dir, page_index) - rec_len;
+    dent  = (struct ext2_dir_entry*) start;
+    while ((char*) dent <= end) {
+      unsigned long d_rec_len;
+      if (dent->rec_len == 0) {
+        ZARUFS_ERROR("[ZARUFS] %s: zero-length directory\n", __func__);
+        zarufs_put_dir_page_cache(page);
+        goto not_found;
+      }
+
+      if (zarufs_strcmp(namelen, name, dent)) {
+        goto found;
+      }
+
+      d_rec_len = le16_to_cpu(dent->rec_len);
+      dent = (struct ext2_dir_entry*) ((char*) dent + d_rec_len);
+    }
+    zarufs_put_dir_page_cache(page);
+  }
+ not_found:
+  return(NULL);
+
+ found:
+  *res_page = page;
+  return(dent);
+}
