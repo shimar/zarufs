@@ -8,6 +8,7 @@
 #include "zarufs_block.h"
 #include "zarufs_inode.h"
 #include "zarufs_dir.h"
+#include "zarufs_namei.h"
 
 typedef struct {
   __le32             *p;
