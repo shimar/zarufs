@@ -54,10 +54,7 @@ zarufs_get_branch(struct inode *inode,
                   int          *err);
 
 static int
-zarufs_write_page(struct page *page, struct writeback_control *wbc) {
-  DBGPRINT("[ZARUFS] AOPS:writepage!\n");
-  return(0);
-}
+zarufs_write_page(struct page *page, struct writeback_control *wbc);
 
 static int
 zarufs_write_begin(struct file *file,
@@ -66,10 +63,7 @@ zarufs_write_begin(struct file *file,
                    unsigned len,
                    unsigned flags,
                    struct page **pagep,
-                   void **fsdata) {
-  DBGPRINT("[ZARUFS] AOPS:write_begin!\n");
-  return(0);
-}
+                   void **fsdata);
 
 static int
 zarufs_write_end(struct file *file,
@@ -78,10 +72,7 @@ zarufs_write_end(struct file *file,
                  unsigned len,
                  unsigned copied,
                  struct page *pagep,
-                 void *fsdata) {
-  DBGPRINT("[ZARUFS] AOPS:write_end!\n");
-  return(0);
-}
+                 void *fsdata);
 
 static sector_t
 zarufs_bmap(struct address_space *mapping, sector_t sec) {
@@ -91,10 +82,7 @@ zarufs_bmap(struct address_space *mapping, sector_t sec) {
 
 static int
 zarufs_write_pages(struct address_space *mapping,
-                   struct writeback_control *wbc) {
-  DBGPRINT("[ZARUFS] AOPS:write_pages!\n");
-  return(0);
-}
+                   struct writeback_control *wbc);
 
 const struct address_space_operations zarufs_aops = {
   .readpage              = zarufs_read_page,
@@ -508,4 +496,53 @@ zarufs_get_blocks(struct inode *inode,
     partial--;
   }
   return(err);
+}
+
+static int
+zarufs_write_page(struct page *page, struct writeback_control *wbc) {
+  DBGPRINT("[ZARUFS] write page.\n");
+  return(block_write_full_page(page, zarufs_get_block, wbc));
+}
+
+static int
+zarufs_write_pages(struct address_space *mapping,
+                   struct writeback_control *wbc) {
+  DBGPRINT("[ZARUFS] write page[s].\n");
+  DBGPRINT("ino=%lu\n", mapping->host->i_ino);
+  return(mpage_writepages(mapping, wbc, zarufs_get_block));
+}
+
+static int
+zarufs_write_begin(struct file          *file,
+                   struct address_space *mapping,
+                   loff_t               pos,
+                   unsigned             len,
+                   unsigned             flags,
+                   struct page          **pagep,
+                   void                 **fsdata) {
+  int ret = 0;
+  DBGPRINT("[ZARUFS] write begin.\n");
+  ret = block_write_begin(mapping, pos, len, flags, pagep, zarufs_get_block);
+  if (ret < 0) {
+    /* zarufs_write_failed(mapping, pos + len); */
+  }
+  return(ret);
+}
+
+static int
+zarufs_write_end(struct file          *file,
+                 struct address_space *mapping,
+                 loff_t               pos,
+                 unsigned             len,
+                 unsigned             copied,
+                 struct page          *pagep,
+                 void                 *fsdata) {
+  int ret;
+
+  DBGPRINT("[ZARUFS] write end.\n");
+  ret = generic_write_end(file, mapping, pos, len, copied, pagep, fsdata);
+  if (ret < len) {
+    /* zarufs_write_failed(mapping, pos + len); */
+  }
+  return (ret);
 }
