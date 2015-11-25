@@ -4,6 +4,8 @@
 #include "zarufs_utils.h"
 #include "zarufs_inode.h"
 #include "zarufs_dir.h"
+#include "zarufs_namei.h"
+#include "zarufs_ialloc.h"
 
 static int
 zarufs_create(struct inode *inode, struct dentry *dir, umode_t mode, bool flag) {
@@ -30,9 +32,46 @@ zarufs_symlink(struct inode *inode, struct dentry *d, const char *name) {
 }
 
 static int
-zarufs_mkdir(struct inode *inode, struct dentry *d, umode_t mode) {
-  DBGPRINT("[ZARUFS] inode ops:mkdir!\n");
-  return (0);
+zarufs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
+  struct inode *inode;
+  int          err;
+
+  DBGPRINT("[ZARUFS] mkdir: start make [%s]\n", dentry->d_name.name);
+
+  /* allocate a new inode for new directory. */
+  inode_inc_link_count(dir);
+  inode = zarufs_alloc_new_inode(dir, S_IFDIR | mode, &dentry->d_name);
+  if (IS_ERR(inode)) {
+    inode_dec_link_count(dir);
+    return (PTR_ERR(inode));
+  }
+
+  inode->i_op             = &zarufs_dir_inode_operations;
+  inode->i_fop            = &zarufs_dir_operations;
+  inode->i_mapping->a_ops = &zarufs_aops;
+
+  /* make empty directory(just make `.`) */
+  inode_inc_link_count(inode);
+  if ((err = zarufs_make_empty(inode, dir))) {
+    goto out_fail;
+  }
+
+  /* insert the new directory's inode to its parent. */
+  if ((err = zarufs_add_link(dentry, inode))) {
+    goto out_fail;
+  }
+
+  unlock_new_inode(inode);
+  d_instantiate(dentry, inode);
+  DBGPRINT("[ZARUFS] mkdir: complete [%s]\n", dentry->d_name.name);
+  return (err);
+
+ out_fail:
+  inode_dec_link_count(inode);
+  inode_dec_link_count(inode);
+  unlock_new_inode(inode);
+  iput(inode);
+  return(err);
 }
 
 static int

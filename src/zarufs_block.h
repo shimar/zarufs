@@ -8,4 +8,10 @@ zarufs_get_group_descriptor(struct super_block *sb,
 
 int zarufs_has_bg_super(struct super_block *sb, int group);
 
+struct buffer_head*
+zarufs_get_gdesc_buffer_cache(struct super_block *sb, unsigned int block_group);
+
+unsigned long
+zarufs_count_free_blocks(struct super_block *sb);
+
 #endif

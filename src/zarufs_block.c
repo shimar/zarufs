@@ -46,6 +46,39 @@ zarufs_has_bg_super(struct super_block *sb, int group) {
   return (1);
 }
 
+struct buffer_head*
+zarufs_get_gdesc_buffer_cache(struct super_block *sb, unsigned int block_group) {
+  struct zarufs_sb_info *zsi;
+  unsigned long         gdesc_index;
+
+  zsi = ZARUFS_SB(sb);
+  if (zsi->s_groups_count <= block_group) {
+    ZARUFS_ERROR("[ZARUFS] %s: large block group number.", __func__);
+    ZARUFS_ERROR("[ZARUFS] block_group=%u, s_groups_count=%lu\n",
+                 block_group, zsi->s_groups_count);
+    return(NULL);
+  }
+
+  gdesc_index = block_group / zsi->s_desc_per_block;
+  return(zsi->s_group_desc[gdesc_index]);
+}
+
+unsigned long
+zarufs_count_free_blocks(struct super_block *sb) {
+  unsigned long desc_count;
+  int           i;
+
+  desc_count = 0;
+  for (i = 0; i < ZARUFS_SB(sb)->s_groups_count; i++) {
+    struct ext2_group_desc *gdesc;
+    if (!(gdesc = zarufs_get_group_descriptor(sb, i))) {
+      continue;
+    }
+    desc_count += le16_to_cpu(gdesc->bg_free_blocks_count);
+  }
+  return (desc_count);
+}
+
 static int
 is_group_sparse(int group) {
   if (group <= 1) {

@@ -16,4 +16,10 @@ zarufs_find_dir_entry(struct inode *dir,
                       struct qstr  *child,
                       struct page  **res_page);
 
+int
+zarufs_make_empty(struct inode *inode, struct inode *parent);
+
+int
+zarufs_add_link(struct dentry *dentry, struct inode *inode);
+
 #endif

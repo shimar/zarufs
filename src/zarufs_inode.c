@@ -21,15 +21,6 @@ zarufs_get_ext2_inode(struct super_block *sb,
                       unsigned long ino,
                       struct buffer_head **bhp);
 
-void
-zarufs_set_vfs_inode_flags(struct inode *inode);
-
-int
-zarufs_get_block(struct inode *inode,
-                 sector_t iblock,
-                 struct buffer_head *bh_result,
-                 int create);
-
 static int
 zarufs_get_blocks(struct inode *inode,
                   sector_t iblock,

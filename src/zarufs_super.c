@@ -8,6 +8,7 @@
 #include "zarufs_utils.h"
 #include "zarufs_block.h"
 #include "zarufs_inode.h"
+#include "zarufs_ialloc.h"
 
 /* inode cache. */
 static struct kmem_cache *zarufs_inode_cachep;
@@ -143,6 +144,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
   int                       block_size;
   int                       ret = -EINVAL;
   int                       i;
+  int                       err;
   unsigned long             sb_block = 1;
 
   // allocate memory to zarufs_sb_info.
@@ -153,6 +155,15 @@ static int zarufs_fill_super_block(struct super_block *sb,
     return ret;
   }
   sb->s_fs_info = (void*) zsi;
+
+  /* allocate memory to spin locks for block group. */
+  zsi->s_blockgroup_lock = kzalloc(sizeof(struct blockgroup_lock),
+                                   GFP_KERNEL);
+  if (!zsi->s_blockgroup_lock) {
+    ZARUFS_ERROR("[ZARUFS] Error: unable to alloc s_blockgroup_lock.\n");
+    kfree(zsi);
+    return(-ENOMEM);
+  }
 
   // set device's block size and size bits to super block.
   block_size = sb_min_blocksize(sb, BLOCK_SIZE);
@@ -304,6 +315,36 @@ static int zarufs_fill_super_block(struct super_block *sb,
     }
   }
 
+  /* initialize exclusive locks. */
+  bgl_lock_init(zsi->s_blockgroup_lock);
+  err = percpu_counter_init(&zsi->s_freeblocks_counter,
+                            zarufs_count_free_blocks(sb),
+                            GFP_KERNEL);
+  if (err) {
+    ZARUFS_ERROR("[ZARUFS] cannot allocate memory for percpu counter.");
+    ZARUFS_ERROR("[s_freeblocks_counter]\n");
+    goto error_mount_phase3;
+  }
+
+  err = percpu_counter_init(&zsi->s_freeinodes_counter,
+                            zarufs_count_free_blocks(sb),
+                            GFP_KERNEL);
+  if (err) {
+    ZARUFS_ERROR("[ZARUFS] cannot allocate memory for percpu counter.");
+    ZARUFS_ERROR("[s_freeinodes_counter]\n");
+    goto error_mount_phase3;
+  }
+
+  err = percpu_counter_init(&zsi->s_dirs_counter,
+                            zarufs_count_free_blocks(sb),
+                            GFP_KERNEL);
+  if (err) {
+    ZARUFS_ERROR("[ZARUFS] cannot allocate memory for percpu counter.");
+    ZARUFS_ERROR("[s_dirs_counter]\n");
+    goto error_mount_phase3;
+  }
+
+
   // setup vfs super block.
   sb->s_op = &zarufs_super_ops;
   sb->s_maxbytes = zarufs_max_file_size(sb);
@@ -311,11 +352,10 @@ static int zarufs_fill_super_block(struct super_block *sb,
 
   DBGPRINT("[ZARUFS] max file size=%lu\n", (unsigned long) sb->s_maxbytes);
   root = zarufs_get_vfs_inode(sb, ZARUFS_EXT2_ROOT_INO);
-  /* root = iget_locked(sb, ZARUFS_EXT2_ROOT_INO); */
   if (IS_ERR(root)) {
     DBGPRINT("[ZARUFS] Error: failed to get root inode.\n");
     ret = PTR_ERR(root);
-    goto error_mount;
+    goto error_mount_phase3;
   }
 
   /* unlock_new_inode(root); */
@@ -330,7 +370,7 @@ static int zarufs_fill_super_block(struct super_block *sb,
   if (!sb->s_root) {
     DBGPRINT("[ZARUFS] Error: failed to make root.\n");
     ret = -ENOMEM;
-    goto error_mount;
+    goto error_mount_phase3;
   }
   le16_add_cpu(&zsb->s_mnt_count, 1);
   DBGPRINT("[ZARUFS] zarufs is mounted!\n");
@@ -338,6 +378,11 @@ static int zarufs_fill_super_block(struct super_block *sb,
   /* debug_print_zarufs_sb(zsb); */
   return 0;
 
+ error_mount_phase3:
+  percpu_counter_destroy(&zsi->s_freeblocks_counter);
+  percpu_counter_destroy(&zsi->s_freeinodes_counter);
+  percpu_counter_destroy(&zsi->s_dirs_counter);
+  
  error_mount_phase2:
   for (i = 0; i < zsi->s_gdb_count; i++) {
     brelse(zsi->s_group_desc[i]);
@@ -348,7 +393,10 @@ static int zarufs_fill_super_block(struct super_block *sb,
   brelse(bh);
 
  error_read_sb:
+  sb->s_fs_info = NULL;
+  kfree(zsi->s_blockgroup_lock);
   kfree(zsi);
+
   return ret;
 }
 
@@ -358,6 +406,11 @@ static void zarufs_put_super_block(struct super_block *sb) {
   int                   i;
 
   zsi = ZARUFS_SB(sb);
+
+  /* destroy percpu counter. */
+  percpu_counter_destroy(&zsi->s_freeblocks_counter);
+  percpu_counter_destroy(&zsi->s_freeinodes_counter);
+  percpu_counter_destroy(&zsi->s_dirs_counter);
 
   /* release buffer cache for block group descripter. */
   for (i = 0; i < zsi->s_gdb_count; i++) {
@@ -370,6 +423,7 @@ static void zarufs_put_super_block(struct super_block *sb) {
   /* release buffer cache for super block. */
   brelse(zsi->s_sbh);
   sb->s_fs_info = NULL;
+  kfree(zsi->s_blockgroup_lock);
   kfree(zsi);
 }
 

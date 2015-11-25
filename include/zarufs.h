@@ -2,7 +2,7 @@
 #define _ZARUFS_H_
 
 #include <uapi/linux/magic.h>
-
+#include <linux/blockgroup_lock.h>
 
 #define ZARUFS_SUPER_MAGIC EXT2_SUPER_MAGIC /* 0xEF53 */
 
@@ -177,6 +177,8 @@ struct zarufs_inode_info {
   struct inode vfs_inode;
 };
 
+#define EXT2_STATE_NEW       0x00000001
+
 /* i_flags */
 #define EXT2_SECRM_FL        FS_SECRM_FL     /* secure deletion */
 #define EXT2_UNRM_FL         FS_UNRM_FL      /* undelete */
@@ -200,6 +202,15 @@ struct zarufs_inode_info {
 #define EXT2_DIRSYNC_FL      FS_DIRSYNC_FL      /* dirsync behaviour (directories only) */
 #define EXT2_TOPDIR_FL       FS_TOPDIR_FL       /* top of directory herarchies */
 #define EXT2_RESERVED_FL     FS_RESERVED_FL     /* reserved for ext2 lib */
+/* flags that should be inherited by new inodes from their parent */
+#define EXT2_FL_INHERITED    (EXT2_SECRM_FL     | EXT2_UNRM_FL         | \
+                              EXT2_COMPR_FL     | EXT2_SYNC_FL         | \
+                              EXT2_NODUMP_FL    | EXT2_NOATIME_FL      | \
+                              EXT2_COMPRBLK_FL  | EXT2_JOURNAL_DATA_FL | \
+                              EXT2_NOCOMP_FL    | EXT2_NOTAIL_FL       | \
+                              EXT2_DIRSYNC_FL   )
+#define EXT2_REG_FLMASK      (~(EXT2_DIRSYNC_FL | EXT2_TOPDIR_FL))
+#define EXT2_OTHER_FLMASK    (EXT2_NODUMP_FL    | EXT2_TOPDIR_FL)
 
 struct zarufs_super_block {
   __le32 s_inodes_count;
@@ -296,6 +307,11 @@ struct zarufs_sb_info {
   // defaults.
   kuid_t         s_resuid;
   kgid_t         s_resgid;
+  /* lock. */
+  struct blockgroup_lock *s_blockgroup_lock;
+  struct percpu_counter  s_freeblocks_counter;
+  struct percpu_counter  s_freeinodes_counter;
+  struct percpu_counter  s_dirs_counter;
 };
 
 struct ext2_group_desc {
@@ -345,6 +361,13 @@ zarufs_get_first_block_num(struct super_block *sb,
 static inline struct zarufs_inode_info
 *ZARUFS_I(struct inode *inode) {
   return (container_of(inode, struct zarufs_inode_info, vfs_inode));
+}
+
+static inline spinlock_t*
+get_sb_blockgroup_lock(struct zarufs_sb_info *zsi, unsigned long block_group) {
+  spinlock_t *lock;
+  lock = bgl_lock_ptr(zsi->s_blockgroup_lock, (unsigned int) block_group);
+  return (lock);
 }
 
 #endif /* _ZARUFS_H_ */
