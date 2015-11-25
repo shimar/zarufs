@@ -162,19 +162,21 @@ struct ext2_inode {
 };
 
 struct zarufs_inode_info {
-  __le32       i_data[ZARUFS_NR_BLOCKS];
-  __u32        i_flags;
-  __u32        i_faddr;
-  __u8         i_frag_no;
-  __u8         i_frag_size;
-  __u16        i_state;
-  __u32        i_file_acl;
-  __u32        i_dir_acl;
-  __u32        i_dtime;
-  __u32        i_block_group;
-  __u32        i_dir_start_lookup;
-  rwlock_t     i_meta_lock;
-  struct inode vfs_inode;
+  __le32        i_data[ZARUFS_NR_BLOCKS];
+  __u32         i_flags;
+  __u32         i_faddr;
+  __u8          i_frag_no;
+  __u8          i_frag_size;
+  __u16         i_state;
+  __u32         i_file_acl;
+  __u32         i_dir_acl;
+  __u32         i_dtime;
+  __u32         i_block_group;
+  __u32         i_dir_start_lookup;
+  struct inode  vfs_inode;
+  /* lock */
+  rwlock_t      i_meta_lock;
+  struct mutex  truncate_mutex;
 };
 
 #define EXT2_STATE_NEW       0x00000001

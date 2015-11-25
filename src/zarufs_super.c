@@ -462,8 +462,12 @@ zarufs_get_descriptor_location(struct super_block *sb,
 
 static void
 zarufs_init_inode_once(void *object) {
-  struct zarufs_inode_info *ei = (struct zarufs_inode_info*)object;
+  struct zarufs_inode_info *ei = (struct zarufs_inode_info*) object;
+  /* initialize locks. */
   rwlock_init(&ei->i_meta_lock);
+  mutex_init(&ei->truncate_mutex);
+
+  /* initialize vfs inode. */
   inode_init_once(&ei->vfs_inode);
 }
 
