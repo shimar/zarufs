@@ -2,6 +2,7 @@
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
 #include <linux/mpage.h>
+#include <linux/sched.h>
 
 #include "../include/zarufs.h"
 #include "zarufs_utils.h"
@@ -83,6 +84,30 @@ zarufs_bmap(struct address_space *mapping, sector_t sec) {
 static int
 zarufs_write_pages(struct address_space *mapping,
                    struct writeback_control *wbc);
+
+static inline unsigned long
+find_goal(struct inode *inode, long block, indirect *partial);
+
+static inline unsigned long
+find_near(struct inode *inode, indirect *ind);
+
+static int
+alloc_branch(struct inode *inode,
+             int indirect_blks,
+             int *blks,
+             unsigned long goal,
+             int *offsets,
+             indirect *branch);
+
+static void
+splice_branch(struct inode *inode,
+              long block,
+              indirect *where,
+              int num,
+              int blks);
+
+static inline int
+verify_indirect_chain(indirect *from, indirect *to);
 
 const struct address_space_operations zarufs_aops = {
   .readpage              = zarufs_read_page,
@@ -419,7 +444,10 @@ zarufs_get_branch(struct inode *inode,
       goto no_block;
     }
     read_lock(&ZARUFS_I(inode)->i_meta_lock);
-    /* as for now, i dont implement detection change. */
+    if (!verify_indirect_chain(chain, p)) {
+      goto truncated;
+    }
+
     add_chain(++p, bh, (__le32*) bh->b_data + *(++offsets));
     read_unlock(&ZARUFS_I(inode)->i_meta_lock);
     if (!p->key) {
@@ -427,6 +455,11 @@ zarufs_get_branch(struct inode *inode,
     }
   }
   return (NULL);
+
+ truncated:
+  read_unlock(&(zi->i_meta_lock));
+  brelse(bh);
+  *err = -EAGAIN;
 
  no_block:
   return(p);
@@ -438,13 +471,16 @@ zarufs_get_blocks(struct inode *inode,
                   unsigned long maxblocks,
                   struct buffer_head *bh_result,
                   int create) {
-  indirect chain[4];
-  indirect *partial;
-  int      offsets[4];
-  int      blocks_to_boundary;
-  int      count;
-  int      depth;
-  int      err;
+  struct zarufs_inode_info *zi;
+  indirect                 chain[4];
+  indirect                 *partial;
+  int                      offsets[4];
+  int                      blocks_to_boundary;
+  int                      count;
+  int                      depth;
+  int                      err;
+  int                      indirect_blks;
+  unsigned long            goal;
 
   /* translate block number to its reference path. */
   if (!(depth = zarufs_block_to_path(inode,
@@ -455,16 +491,27 @@ zarufs_get_blocks(struct inode *inode,
     ZARUFS_ERROR("[ZARUFS] iblock=%lu\n", iblock);
     return(-EIO);
   }
+
   /* find a block. */
   count = 0;
   partial = zarufs_get_branch(inode, depth, offsets, chain, &err);
   if (!partial) {
     unsigned long first_block;
+
     first_block = le32_to_cpu(chain[depth - 1].key);
     clear_buffer_new(bh_result);
     count++;
     while ((count < maxblocks) && (count <= blocks_to_boundary)) {
       unsigned long cur_blk;
+
+      /* verify indirects chain. */
+      if (!verify_indirect_chain(chain, chain + depth - 1)) {
+        /* indirect block might be removed by truncate while */
+        /* reading it. forget and go to reread. */
+        err   = -EAGAIN;
+        count = 0;
+        break;
+      }
 
       cur_blk = le32_to_cpu(*(chain[depth - 1].p + count));
       if (cur_blk == first_block + count) {
@@ -483,7 +530,50 @@ zarufs_get_blocks(struct inode *inode,
     goto cleanup;
   }
 
-  goto cleanup;
+  zi = ZARUFS_I(inode);
+  mutex_lock(&zi->truncate_mutex);
+  if ((err == -EAGAIN) || !verify_indirect_chain(chain, partial)) {
+    while (chain < partial) {
+      brelse(partial->bh);
+      partial--;
+    }
+    partial = zarufs_get_branch(inode, depth, offsets, chain, &err);
+    if (!partial) {
+      count++;
+      mutex_unlock(&zi->truncate_mutex);
+      if (err) {
+        goto cleanup;
+      }
+      clear_buffer_new(bh_result);
+      goto found;
+    }
+  }
+  
+  /* now allocate block. */
+  goal = find_goal(inode, iblock, partial);
+
+  /* the number of blocks need to allocte for [d,t] indrect blocks. */
+  indirect_blks = (chain + depth) - partial - 1;
+
+  /* next, lookup the indirect map to count the total number of direct blocks */
+  /* to allocate for this branch. */
+  count = maxblocks;
+  err = alloc_branch(inode,
+                     indirect_blks,
+                     &count,
+                     goal,
+                     offsets + (partial - chain),
+                     partial);
+  if (err) {
+    DBGPRINT("[ZARUFS] %s: cannot allocate blocks in alloc_branch.\n",
+             __func__);
+    mutex_unlock(&zi->truncate_mutex);
+    goto cleanup;
+  }
+
+  splice_branch(inode, iblock, partial, indirect_blks, count);
+  mutex_unlock(&zi->truncate_mutex);
+  set_buffer_new(bh_result);
 
  found:
   map_bh(bh_result, inode->i_sb, le32_to_cpu(chain[depth - 1].key));
@@ -545,4 +635,166 @@ zarufs_write_end(struct file          *file,
     /* zarufs_write_failed(mapping, pos + len); */
   }
   return (ret);
+}
+
+static inline unsigned long
+find_goal(struct inode *inode, long block, indirect *partial) {
+  return (find_near(inode, partial));
+}
+
+static inline unsigned long
+find_near(struct inode *inode, indirect *ind) {
+  struct zarufs_inode_info  *zi;
+  struct zarufs_sb_info     *zsb;
+  __le32                    *start;
+  __le32                    *cur;
+  unsigned long             bg_start;
+  unsigned long             color;
+
+  zi = ZARUFS_I(inode);
+  if (ind->bh) {
+    start = (__le32*) ind->bh->b_data;
+  } else {
+    start = zi->i_data;
+  }
+
+  /* try to find previous block. */
+  for (cur = ind->p - 1; start <= cur; cur--) {
+    if (*cur) {
+      return (le32_to_cpu(*cur));
+    }
+  }
+
+  /* no such thing, so let's try location of indirect block. */
+  if (ind->bh) {
+    return (ind->bh->b_blocknr);
+  }
+
+  /* it is going to be referred from inode itself? then, just put it into */
+  /* the same cylinder group. */
+  zsb      = ZARUFS_SB(inode->i_sb);
+  bg_start = zarufs_get_first_block_num(inode->i_sb, zi->i_block_group);
+  color    = (current->pid % 16) * (zsb->s_blocks_per_group / 16);
+  return(bg_start + color);
+}
+
+static int
+alloc_branch(struct inode *inode,
+             int indirect_blks,
+             int *blks,
+             unsigned long goal,
+             int *offsets,
+             indirect *branch) {
+  int blocksize;
+  int i;
+  int ind_num;
+  int err;
+
+  struct buffer_head *bh;
+  int                num;
+  unsigned long      new_blocks[4];
+  unsigned long      count;
+
+  new_blocks[0] = zarufs_new_blocks(inode, goal, &count, &err);
+  if (err) {
+    return (err);
+  }
+
+  num = count;
+  branch[0].key = cpu_to_le32(new_blocks[0]);
+  blocksize     = inode->i_sb->s_blocksize;
+
+  /* allocate metadata blocsk and data blocks. */
+  for (ind_num = 1; ind_num < indirect_blks; ind_num++) {
+    new_blocks[ind_num] = zarufs_new_blocks(inode, goal, &count, &err);
+    if (err) {
+      err = -ENOMEM;
+      goto failed_new_blocks;
+    }
+    num++;
+    /* get buffer head for parent block, zero it out and set the pointer */
+    /* to the new one, then send parent to disc. */
+    bh = sb_getblk(inode->i_sb, new_blocks[ind_num - 1]);
+    if (unlikely(!bh)) {
+      err = -ENOMEM;
+      goto failed;
+    }
+    branch[ind_num].bh = bh;
+    lock_buffer(bh);
+    memset(bh->b_data, 0, blocksize);
+    branch[ind_num].p   = (__le32*) bh->b_data + offsets[ind_num];
+    branch[ind_num].key = cpu_to_le32(new_blocks[ind_num]);
+    *branch[ind_num].p  = branch[ind_num].key;
+    if (ind_num == indirect_blks) {
+      unsigned long current_block;
+
+      current_block = new_blocks[ind_num];
+      /* end of chain, update the last new metablock of the chain to */
+      /* point to the new allocated data blocks numbers. */
+      for (i = 1; i < num; i++) {
+        *(branch[ind_num].p + i) = cpu_to_le32(++current_block);
+      }
+    }
+
+    set_buffer_uptodate(bh);
+    unlock_buffer(bh);
+    mark_buffer_dirty_inode(bh, inode);
+    /* we use to sync bh here if IS_SYNC(inode). but we now rely upon */
+    /* generic_write_sync() and b_inode_buffers. but not for directories. */
+    if (S_ISDIR(inode->i_mode) && IS_DIRSYNC(inode)) {
+      sync_dirty_buffer(bh);
+    }
+  }
+
+  *blks = num;
+  return(err);
+
+ failed_new_blocks:
+  ind_num--;
+
+ failed:
+  for (i = 1; i < ind_num; i++) {
+    bforget(branch[i].bh);
+  }
+  for (i = 0; i < indirect_blks; i++) {
+    /* as for now, i don't implement free blocks. */
+    /* zarufs_free_blocks(inode, new_blocks[i]); */
+  }
+  /* as for now, i don't implement free blocks. */
+  /* zarufs_free_blocks(inode, new_blocks[i], num); */
+  return (err);
+}
+
+static void splice_branch(struct inode *inode,
+                          long block,
+                          indirect *where,
+                          int num,
+                          int blks) {
+  int           i;
+  unsigned long current_block;
+  
+  *where->p = where->key;
+  /* update the host buffer_head or inode to point to more just allocated */
+  /* blocks of direct blocks. */
+  if ((num == 0) && (1 < blks)) {
+    current_block = le32_to_cpu(where->key) + 1;
+    for (i = 0; i < blks; i++) {
+      *(where->p + i) = cpu_to_le32(current_block++);
+    }
+  }
+
+  if (where->bh) {
+    mark_buffer_dirty_inode(where->bh, inode);
+  }
+
+  inode->i_ctime = CURRENT_TIME_SEC;
+  mark_inode_dirty(inode);
+}
+
+static inline int
+verify_indirect_chain(indirect *from, indirect *to) {
+  while ((from <= to) && (from->key == *from->p)) {
+    from++;
+  }
+  return(to < from);
 }

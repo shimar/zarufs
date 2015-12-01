@@ -14,4 +14,10 @@ zarufs_get_gdesc_buffer_cache(struct super_block *sb, unsigned int block_group);
 unsigned long
 zarufs_count_free_blocks(struct super_block *sb);
 
+unsigned long
+zarufs_new_blocks(struct inode *inode,
+                  unsigned goal,
+                  unsigned long *count,
+                  int *err);
+
 #endif
