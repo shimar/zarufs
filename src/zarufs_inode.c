@@ -3,6 +3,7 @@
 #include <linux/buffer_head.h>
 #include <linux/mpage.h>
 #include <linux/sched.h>
+#include <linux/writeback.h>
 
 #include "../include/zarufs.h"
 #include "zarufs_utils.h"
@@ -74,6 +75,9 @@ zarufs_write_end(struct file *file,
                  unsigned copied,
                  struct page *pagep,
                  void *fsdata);
+
+static int
+__zarufs_write_inode(struct inode *inode, int do_sync);
 
 static sector_t
 zarufs_bmap(struct address_space *mapping, sector_t sec) {
@@ -266,6 +270,35 @@ struct inode
   /* debug_print_zarufs_inode_info(zi); */
   /* debug_print_vfs_inode(inode); */
   return (inode);
+}
+
+int
+zarufs_write_inode(struct inode *inode, struct writeback_control *wbc) {
+  DBGPRINT("[ZARUFS] %s called!\n", __func__);
+  return (__zarufs_write_inode(inode, wbc->sync_mode == WB_SYNC_ALL));
+}
+
+void
+zarufs_set_zarufs_inode_flags(struct zarufs_inode_info *zi) {
+  unsigned int flags;
+
+  flags = zi->vfs_inode.i_flags;
+  zi->i_flags &= ~(EXT2_SYNC_FL | EXT2_APPEND_FL | EXT2_IMMUTABLE_FL | EXT2_NOATIME_FL | EXT2_DIRSYNC_FL);
+  if (flags & S_SYNC) {
+    zi->i_flags |= EXT2_SYNC_FL;
+  }
+  if (flags & S_APPEND) {
+    zi->i_flags |= EXT2_APPEND_FL;
+  }
+  if (flags & S_IMMUTABLE) {
+    zi->i_flags |= EXT2_IMMUTABLE_FL;
+  }
+  if (flags & S_NOATIME) {
+    zi->i_flags |= EXT2_NOATIME_FL;
+  }
+  if (flags & S_DIRSYNC) {
+    zi->i_flags |= EXT2_DIRSYNC_FL;
+  }
 }
 
 void
@@ -797,4 +830,106 @@ verify_indirect_chain(indirect *from, indirect *to) {
     from++;
   }
   return(to < from);
+}
+
+static int
+__zarufs_write_inode(struct inode *inode, int do_sync) {
+  struct zarufs_inode_info *zi;
+  struct super_block       *sb;
+  ino_t                    ino;
+  uid_t                    uid;
+  gid_t                    gid;
+  struct buffer_head       *bh;
+  struct ext2_inode        *ext2_inode;
+  int                      err;
+
+  DBGPRINT("[ZARUFS] %s: do_sync=%d\n", __func__, do_sync);
+
+  sb         = inode->i_sb;
+  ino        = inode->i_ino;
+  ext2_inode = zarufs_get_ext2_inode(sb, ino, &bh);
+
+  if (IS_ERR(ext2_inode)) {
+    return (-EIO);
+  }
+
+  zi  = ZARUFS_I(inode);
+  uid = i_uid_read(inode);
+  gid = i_gid_read(inode);
+  err = 0;
+
+  /* for fields not tracking in the in-memory inode, */
+  /* initialize them to zero for new inodes. */
+  if (zi->i_state & EXT2_STATE_NEW) {
+    memset(ext2_inode, 0x00, ZARUFS_SB(sb)->s_inode_size);
+  }
+
+  zarufs_set_zarufs_inode_flags(zi);
+
+  ext2_inode->i_mode = cpu_to_le16(inode->i_mode);
+
+  if (!(ZARUFS_SB(sb)->s_mount_opt & EXT2_MOUNT_NO_UID32)) {
+    /* 32bit uid/gid */
+    ext2_inode->i_uid = cpu_to_le16(low_16_bits(uid));
+    ext2_inode->i_gid = cpu_to_le16(low_16_bits(gid));
+    /* old inodes get re-used with the upper 16 bits of the uid/gid intact. */
+    if (!zi->i_dtime) {
+      ext2_inode->osd2.linux2.l_i_uid_high = cpu_to_le16(high_16_bits(uid));
+      ext2_inode->osd2.linux2.l_i_gid_high = cpu_to_le16(high_16_bits(gid));
+    } else {
+      ext2_inode->osd2.linux2.l_i_uid_high = 0;
+      ext2_inode->osd2.linux2.l_i_gid_high = 0;
+    }
+  } else {
+    /* 16bit uid/gid */
+    ext2_inode->i_uid = cpu_to_le16(fs_high2lowuid(uid));
+    ext2_inode->i_gid = cpu_to_le16(fs_high2lowuid(gid));
+    ext2_inode->osd2.linux2.l_i_uid_high = 0;
+    ext2_inode->osd2.linux2.l_i_gid_high = 0;
+  }
+
+  ext2_inode->i_links_count = cpu_to_le16(inode->i_nlink);
+  ext2_inode->i_size        = cpu_to_le32(inode->i_size);
+  ext2_inode->i_atime       = cpu_to_le32(inode->i_atime.tv_sec);
+  ext2_inode->i_ctime       = cpu_to_le32(inode->i_ctime.tv_sec);
+  ext2_inode->i_mtime       = cpu_to_le32(inode->i_mtime.tv_sec);
+
+  ext2_inode->i_blocks      = cpu_to_le32(inode->i_blocks);
+  ext2_inode->i_dtime       = cpu_to_le32(zi->i_dtime);
+  ext2_inode->i_flags       = cpu_to_le32(zi->i_flags);
+  ext2_inode->i_faddr       = cpu_to_le32(zi->i_faddr);
+  ext2_inode->i_file_acl    = cpu_to_le32(zi->i_file_acl);
+
+  ext2_inode->osd2.linux2.l_i_frag  = zi->i_frag_no;
+  ext2_inode->osd2.linux2.l_i_fsize = zi->i_frag_size;
+
+  if (!S_ISREG(inode->i_mode)) {
+    ext2_inode->i_dir_acl = cpu_to_le32(zi->i_dir_acl);
+  } else {
+    ext2_inode->i_dir_acl = cpu_to_le32(inode->i_size >> 32);
+  }
+
+  if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
+    /* do not implement character/block device. */
+  } else {
+    int n;
+    for (n = 0; n < ZARUFS_NR_BLOCKS; n++) {
+      ext2_inode->i_block[n] = zi->i_data[n];
+    }
+  }
+
+  mark_buffer_dirty(bh);
+  if (do_sync) {
+    sync_dirty_buffer(bh);
+    if (buffer_req(bh) && !buffer_uptodate(bh)) {
+      ZARUFS_ERROR("[ZARUFS] %s: io error syncing inode[%s:%08lx]\n",
+                   __func__, sb->s_id, (unsigned long) ino);
+      err = -EIO;
+    }
+  }
+
+  zi->i_state &= ~EXT2_STATE_NEW;
+  brelse(bh);
+
+  return(err);
 }

@@ -14,4 +14,10 @@ zarufs_set_vfs_inode_flags(struct inode *inode);
 struct inode
 *zarufs_get_vfs_inode(struct super_block *sb, unsigned int ino);
 
+int
+zarufs_write_inode(struct inode *inode, struct writeback_control *wbc);
+
+void
+zarufs_set_zarufs_inode_flags(struct zarufs_inode_info *zi);
+
 #endif

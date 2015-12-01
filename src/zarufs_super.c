@@ -61,11 +61,6 @@ static struct inode
   return (&zi->vfs_inode);
 }
 
-static int zarufs_write_inode(struct inode* inode, struct writeback_control *wbc) {
-  DBGPRINT("[ZARUFS] write_inode\n");
-  return 0;
-}
-
 static void zarufs_destroy_inode(struct inode* inode) {
   struct zarufs_inode_info *zi = ZARUFS_I(inode);
   kmem_cache_free(zarufs_inode_cachep, zi);
