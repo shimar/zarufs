@@ -1,5 +1,6 @@
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
+#include <linux/random.h>
 
 #include "../include/zarufs.h"
 #include "zarufs_utils.h"
@@ -7,8 +8,11 @@
 #include "zarufs_block.h"
 #include "zarufs_ialloc.h"
 
+/* static long */
+/* find_directory_group(struct super_block *sb, struct inode *parent); */
+
 static long
-find_directory_group(struct super_block *sb, struct inode *parent);
+find_dir_group_orlov(struct super_block *sb, struct inode *parent);
 
 struct buffer_head*
 read_inode_bitmap(struct super_block *sb, unsigned long block_group);
@@ -40,7 +44,8 @@ zarufs_alloc_new_inode(struct inode *dir, umode_t mode, const struct qstr *qstr)
   ino       = 0;
   zsi       = ZARUFS_SB(sb);
   if (S_ISDIR(mode)) {
-    group = find_directory_group(sb, dir);
+    /* group = find_directory_group(sb, dir); */
+    group = find_dir_group_orlov(sb, dir);
   } else {
     /* as for now allocating inode for file is not support. */
     err = -ENOSPC;
@@ -215,39 +220,147 @@ zarufs_count_directories(struct super_block *sb) {
 }
 
 
+/* static long */
+/* find_directory_group(struct super_block *sb, struct inode *parent) { */
+/*   struct ext2_group_desc *best_desc; */
+/*   unsigned long          groups_count; */
+/*   unsigned long          avefreei; */
+/*   int                    group; */
+/*   int                    best_group; */
+
+/*   best_desc    = NULL; */
+/*   groups_count = ZARUFS_SB(sb)->s_groups_count; */
+/*   avefreei     = zarufs_count_free_inodes(sb) / groups_count; */
+/*   best_group   = -1; */
+
+/*   for (group = 0; group < groups_count; group++) { */
+/*     struct ext2_group_desc *cur_desc; */
+/*     cur_desc = zarufs_get_group_descriptor(sb, group); */
+/*     if (!cur_desc || !cur_desc->bg_free_inodes_count) { */
+/*       /\* if there is no avaible inode or invalid descriptor, go next  *\/ */
+/*       continue; */
+/*     } */
+/*     if (le16_to_cpu(cur_desc->bg_free_inodes_count) < avefreei) { */
+/*       /\* if number of inodes is less than average, go next *\/ */
+/*       continue; */
+/*     } */
+/*     if (!best_desc || */
+/*         (le16_to_cpu(best_desc->bg_free_blocks_count) < */
+/*          le16_to_cpu(cur_desc->bg_free_blocks_count))) { */
+/*       /\* found canditate *\/ */
+/*       best_group = group; */
+/*       best_desc  = cur_desc; */
+/*     } */
+/*   } */
+/*   return(best_group); */
+/* } */
+
 static long
-find_directory_group(struct super_block *sb, struct inode *parent) {
-  struct ext2_group_desc *best_desc;
-  unsigned long          groups_count;
-  unsigned long          avefreei;
+find_dir_group_orlov(struct super_block *sb, struct inode *parent) {
+  struct zarufs_sb_info *zsi;
+  int                   parent_group;
+  int                   ngroups;
+  int                   inodes_per_group;
+
+  struct ext2_group_desc *gdesc;
+  unsigned int           freei;
+  unsigned int           avefreei;
+  unsigned long          freeb;
+  unsigned long          avefreeb;
+  unsigned int           ndirs;
+  int                    max_dirs;
+  int                    min_inodes;
+  unsigned long          min_blocks;
   int                    group;
-  int                    best_group;
+  int                    i;
 
-  best_desc    = NULL;
-  groups_count = ZARUFS_SB(sb)->s_groups_count;
-  avefreei     = zarufs_count_free_inodes(sb) / groups_count;
-  best_group   = -1;
+  zsi              = ZARUFS_SB(sb);
+  parent_group     = ZARUFS_I(parent)->i_block_group;
+  ngroups          = zsi->s_groups_count;
+  inodes_per_group = zsi->s_inodes_per_group;
+  group            = -1;
 
-  for (group = 0; group < groups_count; group++) {
-    struct ext2_group_desc *cur_desc;
-    cur_desc = zarufs_get_group_descriptor(sb, group);
-    if (!cur_desc || !cur_desc->bg_free_inodes_count) {
-      /* if there is no avaible inode or invalid descriptor, go next  */
-      continue;
-    }
-    if (le16_to_cpu(cur_desc->bg_free_inodes_count) < avefreei) {
-      /* if number of inodes is less than average, go next */
-      continue;
-    }
-    if (!best_desc ||
-        (le16_to_cpu(best_desc->bg_free_blocks_count) <
-         le16_to_cpu(cur_desc->bg_free_blocks_count))) {
-      /* found canditate */
+  freei    = percpu_counter_read_positive(&zsi->s_freeinodes_counter);
+  avefreei = freei / ngroups;
+  freeb    = percpu_counter_read_positive(&zsi->s_freeblocks_counter);
+  avefreeb = freeb / ngroups;
+  ndirs    = percpu_counter_read_positive(&zsi->s_dirs_counter);
+
+  if ((parent == sb->s_root->d_inode) ||
+      (ZARUFS_I(parent)->i_flags & EXT2_TOPDIR_FL)) {
+    int  best_ndir;
+    long best_group;
+
+    best_ndir  = inodes_per_group;
+    best_group = -1;
+
+    get_random_bytes(&group, sizeof(group));
+    parent_group = (unsigned) group % ngroups;
+
+    for (i = 0; i < ngroups; i++) {
+      group = (parent_group + 1) % ngroups;
+      gdesc = zarufs_get_group_descriptor(sb, group);
+      if (!gdesc || !gdesc->bg_free_inodes_count) {
+        continue;
+      }
+      if (best_ndir <= le16_to_cpu(gdesc->bg_used_dirs_count)) {
+        continue;
+      }
+      if (le16_to_cpu(gdesc->bg_free_inodes_count) < avefreei) {
+        continue;
+      }
+      if (le16_to_cpu(gdesc->bg_free_blocks_count) <= avefreeb) {
+        continue;
+      }
       best_group = group;
-      best_desc  = cur_desc;
+      best_ndir  = le16_to_cpu(gdesc->bg_used_dirs_count);
+    }
+    if (0 <= best_group) {
+      return (best_group);
+    }
+    goto fallback;
+  }
+
+  max_dirs = (ndirs / ngroups) + (inodes_per_group / 16);
+  min_inodes = avefreei - (inodes_per_group / 4);
+  min_blocks = avefreeb - (zsi->s_blocks_per_group / 4);
+
+  for (i = 0; i < ngroups; i++) {
+    group = (parent_group + i) % ngroups;
+    gdesc = zarufs_get_group_descriptor(sb, group);
+    if (!gdesc || !gdesc->bg_free_inodes_count) {
+      continue;
+    }
+    if (max_dirs < le16_to_cpu(gdesc->bg_used_dirs_count)) {
+      continue;
+    }
+    if (le16_to_cpu(gdesc->bg_free_inodes_count) < min_inodes) {
+      continue;
+    }
+    if (le16_to_cpu(gdesc->bg_free_blocks_count) < min_blocks) {
+      continue;
+    }
+    return (group);
+  }
+
+ fallback:
+  for (i = 0; i < ngroups; i++) {
+    group = (parent_group + i) % ngroups;
+    gdesc = zarufs_get_group_descriptor(sb, group);
+    if (!gdesc || !gdesc->bg_free_inodes_count) {
+      continue;
+    }
+    if (avefreei <= le16_to_cpu(gdesc->bg_free_inodes_count)) {
+      return (group);
     }
   }
-  return(best_group);
+
+  if (avefreei) {
+    avefreei = 0;
+    goto fallback;
+  }
+
+  return (-1);
 }
 
 struct buffer_head*
