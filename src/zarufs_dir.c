@@ -468,3 +468,57 @@ zarufs_add_link(struct dentry *dentry, struct inode *inode) {
   zarufs_put_dir_page_cache(page);
   return(err);
 }
+
+int
+zarufs_is_empty_dir(struct inode *inode) {
+  struct page * page;
+  unsigned long i;
+
+  page = NULL;
+
+  for (i = 0; i < get_dir_num_pages(inode); i++) {
+    char                  *start;
+    char                  *end;
+    struct ext2_dir_entry *dent;
+
+    page = zarufs_get_dir_page_cache(inode, i);
+    if (IS_ERR(page)) {
+      continue;
+    }
+
+    start = page_address(page);
+    dent  = (struct ext2_dir_entry*) start;
+    end   = start + (zarufs_get_page_last_byte(inode, i) - ZARUFS_DIR_REC_LEN(1));
+
+    while ((char*) dent <= end) {
+      if (dent->rec_len == 0) {
+        ZARUFS_ERROR("[ZARUFS] %s: zero-length directry entry.\n",
+                     __func__);
+      }
+
+      if (dent->inode != 0) {
+        if (dent->name[0] != '.') {
+          goto not_empty;
+        }
+        if (2 < dent->name_len) {
+          goto not_empty;
+        }
+        if (dent->name_len < 2) {
+          if (dent->inode != cpu_to_le32(inode->i_ino)) {
+            goto not_empty;
+          }
+        } else if (dent->name[1] != '.') {
+          goto not_empty;
+        }
+        /* goto next entry. */
+        dent = (struct ext2_dir_entry*) ((char*) dent + le16_to_cpu(dent->rec_len));
+      }
+      zarufs_put_dir_page_cache(page);
+    }
+  }
+  return (1);
+
+ not_empty:
+  zarufs_put_dir_page_cache(page);
+  return(0);
+}

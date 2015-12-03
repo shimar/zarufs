@@ -22,4 +22,7 @@ zarufs_make_empty(struct inode *inode, struct inode *parent);
 int
 zarufs_add_link(struct dentry *dentry, struct inode *inode);
 
+int
+zarufs_is_empty_dir(struct inode *inode);
+
 #endif
