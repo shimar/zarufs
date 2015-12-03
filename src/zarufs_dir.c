@@ -522,3 +522,56 @@ zarufs_is_empty_dir(struct inode *inode) {
   zarufs_put_dir_page_cache(page);
   return(0);
 }
+
+int
+zarufs_delete_dir_entry(struct ext2_dir_entry *dir, struct page *page) {
+  struct inode          *inode;
+  char                  *start;
+  unsigned              from;
+  unsigned              to;
+  loff_t                pos;
+  struct ext2_dir_entry *pde;
+  struct ext2_dir_entry *dent;
+  int                   err;
+
+  inode = page->mapping->host;
+  start = page_address(page);
+  from  = ((char*) dir - start) & ~(inode->i_sb->s_blocksize - 1);
+  to    = ((char*) dir - start) + le16_to_cpu(dir->rec_len);
+
+  pde  = NULL;
+  dent = (struct ext2_dir_entry*) (start + from);
+
+  while ((char*) dent < (char*) dir) {
+    if (dent->rec_len == 0) {
+      ZARUFS_ERROR("[ZARUFS] %s: zero-length directory entry.\n", __func__);
+      err = -EIO;
+      goto out;
+    }
+    pde = dent;
+    dent = (struct ext2_dir_entry*) ((char*) dent + le16_to_cpu(dent->rec_len));
+  }
+
+  if (pde) {
+    from = (char*) pde - start;
+  }
+
+  pos = page_offset(page) + from;
+  lock_page(page);
+  err = prepare_write_block(page, pos, to - from);
+  if (pde) {
+    pde->rec_len = le16_to_cpu(to - from);
+  }
+
+  dir->inode = 0;
+  err = commit_block_write(page, pos, to - from);
+  inode->i_mtime = CURRENT_TIME_SEC;
+  inode->i_ctime = inode->i_mtime;
+  ZARUFS_I(inode)->i_flags &= ~EXT2_BTREE_FL;
+
+  mark_inode_dirty(inode);
+
+ out:
+  zarufs_put_dir_page_cache(page);
+  return (err);
+}

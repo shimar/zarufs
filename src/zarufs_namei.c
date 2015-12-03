@@ -8,6 +8,12 @@
 #include "zarufs_ialloc.h"
 
 static int
+zarufs_rmdir(struct inode *dir, struct dentry *dentry);
+
+static int
+zarufs_unlink(struct inode *dir, struct dentry *dentry);
+
+static int
 zarufs_create(struct inode *inode, struct dentry *dir, umode_t mode, bool flag) {
   DBGPRINT("[ZARUFS] inode ops:create!\n");
   return (0);
@@ -16,12 +22,6 @@ zarufs_create(struct inode *inode, struct dentry *dir, umode_t mode, bool flag) 
 static int
 zarufs_link(struct dentry *dentry, struct inode *inode, struct dentry *d) {
   DBGPRINT("[ZARUFS] inode ops:link!\n");
-  return (0);
-}
-
-static int
-zarufs_unlink(struct inode *inode, struct dentry *d) {
-  DBGPRINT("[ZARUFS] inode ops:unlink!\n");
   return (0);
 }
 
@@ -72,12 +72,6 @@ zarufs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
   unlock_new_inode(inode);
   iput(inode);
   return(err);
-}
-
-static int
-zarufs_rmdir(struct inode *inode, struct dentry *d) {
-  DBGPRINT("[ZARUFS] inode ops:rmdir!\n");
-  return (0);
 }
 
 static int
@@ -149,3 +143,45 @@ const struct inode_operations zarufs_dir_inode_operations = {
   .get_acl = zarufs_get_acl,
   .tmpfile = zarufs_tmp_file,
 };
+
+
+static int
+zarufs_rmdir(struct inode *dir, struct dentry *dentry) {
+  struct inode *inode;
+  int          err;
+
+  err = -ENOTEMPTY;
+  inode = dentry->d_inode;
+
+  if (zarufs_is_empty_dir(inode)) {
+    if (!(err = zarufs_unlink(dir, dentry))) {
+      inode->i_size = 0;
+      inode_dec_link_count(inode);
+      inode_dec_link_count(dir);
+    }
+  }
+
+  return(err);
+}
+
+static int
+zarufs_unlink(struct inode *dir, struct dentry *dentry) {
+  struct inode          *inode;
+  struct ext2_dir_entry *dent;
+  struct page           *page;
+  int                   err;
+
+  if (!(dent = zarufs_find_dir_entry(dir, &dentry->d_name, &page))) {
+    return (-ENOENT);
+  }
+
+  if ((err = zarufs_delete_dir_entry(dent, page))) {
+    return (err);
+  }
+
+  inode = dentry->d_inode;
+  inode->i_ctime = dir->i_ctime;
+  inode_dec_link_count(inode);
+
+  return (0);
+}

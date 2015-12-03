@@ -25,4 +25,7 @@ zarufs_add_link(struct dentry *dentry, struct inode *inode);
 int
 zarufs_is_empty_dir(struct inode *inode);
 
+int
+zarufs_delete_dir_entry(struct ext2_dir_entry *dir, struct page *page);
+
 #endif
