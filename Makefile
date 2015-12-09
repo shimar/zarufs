@@ -16,13 +16,17 @@ all:
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 
-
 insmod:
 	sudo insmod zarufs.ko
 
 rmmod:
 	sudo rmmod zarufs
+
 mount:
 	sudo mount -t zarufs -o loop ../zaru.img ../mnt
+
 umount:
 	sudo umount ../mnt
+
+tags:
+	etags include/*.h src/*.h src/*.c
