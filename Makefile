@@ -21,3 +21,7 @@ insmod:
 
 rmmod:
 	sudo rmmod zarufs
+mount:
+	sudo mount -t zarufs -o loop ../zaru.img ../mnt
+umount:
+	sudo umount ../mnt
