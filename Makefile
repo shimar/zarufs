@@ -4,7 +4,8 @@ ZARUFS_SRC = src/zarufs.c \
 	           src/zarufs_inode.c \
 	           src/zarufs_dir.c \
 	           src/zarufs_namei.c \
-             src/zarufs_ialloc.c
+             src/zarufs_ialloc.c \
+	           src/zarufs_file.c
 
 obj-m += zarufs.o
 zarufs-objs := $(ZARUFS_SRC:.c=.o)

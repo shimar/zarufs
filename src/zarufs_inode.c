@@ -11,6 +11,7 @@
 #include "zarufs_inode.h"
 #include "zarufs_dir.h"
 #include "zarufs_namei.h"
+#include "zarufs_file.h"
 
 typedef struct {
   __le32             *p;
@@ -257,6 +258,9 @@ struct inode
   }
 
   if (S_ISREG(inode->i_mode)) {
+    inode->i_fop = &zarufs_file_operations;
+    inode->i_op  = &zarufs_file_inode_operations;
+    inode->i_mapping->a_ops = &zarufs_aops;
   } else if (S_ISDIR(inode->i_mode)) {
     DBGPRINT("[ZARUFS] get directory inode!\n");
     inode->i_fop = &zarufs_dir_operations;

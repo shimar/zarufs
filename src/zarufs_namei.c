@@ -6,6 +6,7 @@
 #include "zarufs_dir.h"
 #include "zarufs_namei.h"
 #include "zarufs_ialloc.h"
+#include "zarufs_file.h"
 
 static int
 zarufs_rmdir(struct inode *dir, struct dentry *dentry);
@@ -17,10 +18,10 @@ static int
 zarufs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry);
 
 static int
-zarufs_create(struct inode *inode, struct dentry *dir, umode_t mode, bool flag) {
-  DBGPRINT("[ZARUFS] inode ops:create!\n");
-  return (0);
-}
+zarufs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl);
+
+static inline int
+add_non_dir(struct dentry *dentry, struct inode *inode);
 
 static int
 zarufs_link(struct dentry *dentry, struct inode *inode, struct dentry *d) {
@@ -264,5 +265,43 @@ zarufs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *ne
   page_cache_release(old_page);
 
  out:
+  return(err);
+}
+
+static int
+zarufs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl) {
+  struct inode *inode;
+  DBGPRINT("[ZARUFS] %s: create [%s]\n", __func__, dentry->d_name.name);
+
+  inode = zarufs_alloc_new_inode(dir, mode, &dentry->d_name);
+
+  if (IS_ERR(inode)) {
+    DBGPRINT("[ZARUFS] %s: faild to create[%s]\n", __func__, dentry->d_name.name);
+    return(PTR_ERR(inode));
+  }
+
+  inode->i_op = &zarufs_file_inode_operations;
+  inode->i_mapping->a_ops = &zarufs_aops;
+  inode->i_fop = &zarufs_file_operations;
+
+  mark_inode_dirty(inode);
+  return (add_non_dir(dentry, inode));
+}
+
+static inline int
+add_non_dir(struct dentry *dentry, struct inode *inode) {
+  int err;
+
+  if (!(err = zarufs_add_link(dentry, inode))) {
+    DBGPRINT("[ZARUFS] %s:create [%s]\n", __func__, dentry->d_name.name);
+    unlock_new_inode(inode);
+    d_instantiate(dentry, inode);
+    return(0);
+  }
+
+  DBGPRINT("[ZARUFS] %s:error add non-dir entry.\n", __func__);
+  inode_dec_link_count(inode);
+  unlock_new_inode(inode);
+  iput(inode);
   return(err);
 }

@@ -8,8 +8,8 @@
 #include "zarufs_block.h"
 #include "zarufs_ialloc.h"
 
-/* static long */
-/* find_directory_group(struct super_block *sb, struct inode *parent); */
+static long
+find_group_other(struct super_block *sb, struct inode *parent);
 
 static long
 find_dir_group_orlov(struct super_block *sb, struct inode *parent);
@@ -19,24 +19,25 @@ read_inode_bitmap(struct super_block *sb, unsigned long block_group);
 
 struct inode*
 zarufs_alloc_new_inode(struct inode *dir, umode_t mode, const struct qstr *qstr) {
-  struct super_block       *sb;
-  struct buffer_head       *bitmap_bh;
-  struct buffer_head       *bh_gdesc;
+  struct super_block        *sb;
+  struct buffer_head        *bitmap_bh;
+  struct buffer_head        *bh_gdesc;
 
-  struct inode             *inode;    /* new inode */
-  ino_t                    ino;
-  struct ext2_group_desc   *gdesc;
+  struct inode              *inode;    /* new inode */
+  ino_t                     ino;
+  struct ext2_group_desc    *gdesc;
   struct zarufs_super_block *zsb;
-  struct zarufs_inode_info *zi;
-  struct zarufs_sb_info    *zsi;
+  struct zarufs_inode_info  *zi;
+  struct zarufs_sb_info     *zsi;
 
-  unsigned long            group;
-  int                      i;
-  int                      err;
+  unsigned long             group;
+  int                       i;
+  int                       err;
 
   /* allocate vfs new inode. */
   sb = dir->i_sb;
   if (!(inode = new_inode(sb))) {
+    DBGPRINT("[ZARUFS] %s: failed to get new inode.\n", __func__);
     return(ERR_PTR(-ENOMEM));
   }
 
@@ -48,8 +49,9 @@ zarufs_alloc_new_inode(struct inode *dir, umode_t mode, const struct qstr *qstr)
     group = find_dir_group_orlov(sb, dir);
   } else {
     /* as for now allocating inode for file is not support. */
-    err = -ENOSPC;
-    goto fail;
+    /* err = -ENOSPC; */
+    /* goto fail; */
+    group = find_group_other(sb, dir);
   }
 
   if (group == -1) {
@@ -220,40 +222,47 @@ zarufs_count_directories(struct super_block *sb) {
 }
 
 
-/* static long */
-/* find_directory_group(struct super_block *sb, struct inode *parent) { */
-/*   struct ext2_group_desc *best_desc; */
-/*   unsigned long          groups_count; */
-/*   unsigned long          avefreei; */
-/*   int                    group; */
-/*   int                    best_group; */
+static long
+find_group_other(struct super_block *sb, struct inode *parent) {
+  int                    parent_group = ZARUFS_I(parent)->i_block_group;
+  int                    ngroups      = ZARUFS_SB(sb)->s_groups_count;
+  struct ext2_group_desc *desc;
+  int                    group;
+  int                    i;
 
-/*   best_desc    = NULL; */
-/*   groups_count = ZARUFS_SB(sb)->s_groups_count; */
-/*   avefreei     = zarufs_count_free_inodes(sb) / groups_count; */
-/*   best_group   = -1; */
+  group = parent_group;
+  desc = zarufs_get_group_descriptor(sb, group);
+  if (desc && le16_to_cpu(desc->bg_free_inodes_count) && le16_to_cpu(desc->bg_free_blocks_count)) {
+    goto found;
+  }
 
-/*   for (group = 0; group < groups_count; group++) { */
-/*     struct ext2_group_desc *cur_desc; */
-/*     cur_desc = zarufs_get_group_descriptor(sb, group); */
-/*     if (!cur_desc || !cur_desc->bg_free_inodes_count) { */
-/*       /\* if there is no avaible inode or invalid descriptor, go next  *\/ */
-/*       continue; */
-/*     } */
-/*     if (le16_to_cpu(cur_desc->bg_free_inodes_count) < avefreei) { */
-/*       /\* if number of inodes is less than average, go next *\/ */
-/*       continue; */
-/*     } */
-/*     if (!best_desc || */
-/*         (le16_to_cpu(best_desc->bg_free_blocks_count) < */
-/*          le16_to_cpu(cur_desc->bg_free_blocks_count))) { */
-/*       /\* found canditate *\/ */
-/*       best_group = group; */
-/*       best_desc  = cur_desc; */
-/*     } */
-/*   } */
-/*   return(best_group); */
-/* } */
+  group = (group + parent->i_ino) % ngroups;
+  for (i = 1; i < ngroups; i <<= 1) {
+    group += 1;
+    if (group >= ngroups) {
+      group -= ngroups;
+    }
+    desc = zarufs_get_group_descriptor(sb, group);
+    if (desc && le16_to_cpu(desc->bg_free_inodes_count) && le16_to_cpu(desc->bg_free_blocks_count)) {
+      goto found;
+    }
+  }
+
+  group = parent_group;
+  for (i = 0; i < ngroups; i++) {
+    if (++group >= ngroups) {
+      group = 0;
+    }
+    desc = zarufs_get_group_descriptor(sb, group);
+    if (desc && le16_to_cpu(desc->bg_free_inodes_count) && le16_to_cpu(desc->bg_free_blocks_count)) {
+      goto found;
+    }
+  }
+  return -1;
+
+ found:
+  return group;
+}
 
 static long
 find_dir_group_orlov(struct super_block *sb, struct inode *parent) {
