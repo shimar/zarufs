@@ -28,4 +28,14 @@ zarufs_is_empty_dir(struct inode *inode);
 int
 zarufs_delete_dir_entry(struct ext2_dir_entry *dir, struct page *page);
 
+struct ext2_dir_entry*
+zarufs_get_dot_dot_entry(struct inode *dir, struct page **p);
+
+void
+zarufs_set_link(struct inode *dir,
+                struct ext2_dir_entry *dent,
+                struct page *page,
+                struct inode *inode,
+                int update_times);
+
 #endif

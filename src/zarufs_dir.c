@@ -575,3 +575,49 @@ zarufs_delete_dir_entry(struct ext2_dir_entry *dir, struct page *page) {
   zarufs_put_dir_page_cache(page);
   return (err);
 }
+
+struct ext2_dir_entry*
+zarufs_get_dot_dot_entry(struct inode *dir, struct page **p) {
+  struct page           *page;
+  struct ext2_dir_entry *dent;
+
+  page = zarufs_get_dir_page_cache(dir, 0);
+  dent = NULL;
+
+  if (!IS_ERR(page)) {
+    struct ext2_dir_entry *cur_dent;
+    cur_dent = (struct ext2_dir_entry*) page_address(page);
+    dent = (struct ext2_dir_entry*)((char*) cur_dent + le16_to_cpu(cur_dent->rec_len));
+    *p = page;
+  }
+  return(dent);
+}
+
+void
+zarufs_set_link(struct inode *dir,
+                struct ext2_dir_entry *dent,
+                struct page *page,
+                struct inode *inode,
+                int update_times) {
+  loff_t   pos;
+  unsigned len;
+  int      err;
+
+  pos = page_offset(page) + ((char*) dent - (char*) page_address(page));
+  len = le16_to_cpu(dent->rec_len);
+
+  lock_page(page);
+  err = prepare_write_block(page, pos, len);
+  dent->inode = cpu_to_le32(inode->i_ino);
+  set_dir_entry_type(dent, inode);
+  err = commit_block_write(page, pos, len);
+  zarufs_put_dir_page_cache(page);
+
+  if (update_times) {
+    dir->i_mtime = CURRENT_TIME_SEC;
+    dir->i_ctime = dir->i_mtime;
+  }
+
+  ZARUFS_I(dir)->i_flags &= ~EXT2_BTREE_FL;
+  mark_inode_dirty(dir);
+}

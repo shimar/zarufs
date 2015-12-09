@@ -14,6 +14,9 @@ static int
 zarufs_unlink(struct inode *dir, struct dentry *dentry);
 
 static int
+zarufs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry);
+
+static int
 zarufs_create(struct inode *inode, struct dentry *dir, umode_t mode, bool flag) {
   DBGPRINT("[ZARUFS] inode ops:create!\n");
   return (0);
@@ -77,12 +80,6 @@ zarufs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode) {
 static int
 zarufs_mknod(struct inode *inode, struct dentry *d, umode_t mode, dev_t dev) {
   DBGPRINT("[ZARUFS] inode ops:mknod!\n");
-  return (0);
-}
-
-static int
-zarufs_rename(struct inode *inode, struct dentry *d, struct inode *inode2, struct dentry *d2) {
-  DBGPRINT("[ZARUFS] inode ops:rename!\n");
   return (0);
 }
 
@@ -184,4 +181,88 @@ zarufs_unlink(struct inode *dir, struct dentry *dentry) {
   inode_dec_link_count(inode);
 
   return (0);
+}
+
+static int
+zarufs_rename(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir, struct dentry *new_dentry) {
+  struct inode          *old_inode;
+  struct page           *old_page;
+  struct ext2_dir_entry *old_dent;
+  struct inode          *new_inode;
+  struct page           *dir_page;
+  struct ext2_dir_entry *dir_dent;
+
+  int err;
+
+  old_inode = old_dentry->d_inode;
+  old_dent  = zarufs_find_dir_entry(old_dir, &old_dentry->d_name, &old_page);
+  new_inode = new_dentry->d_inode;
+  dir_page  = NULL;
+  dir_dent  = NULL;
+  err = -EIO;
+  if (!old_dent) {
+    goto out;
+  }
+
+  if (S_ISDIR(old_inode->i_mode)) {
+    dir_dent = zarufs_get_dot_dot_entry(old_inode, &dir_page);
+    if (!dir_dent) {
+      goto out_old;
+    }
+  }
+
+  if (new_inode) {
+    struct page           *new_page;
+    struct ext2_dir_entry *new_dent;
+    if (dir_dent && !zarufs_is_empty_dir(new_inode)) {
+      err = !ENOTEMPTY;
+      goto out_dir;
+    }
+    new_dent = zarufs_find_dir_entry(new_dir, &new_dentry->d_name, &new_page);
+    if (!new_dent) {
+      err = -ENOENT;
+      goto out_dir;
+    }
+    zarufs_set_link(new_dir, new_dent, new_page, old_inode, 1);
+    new_inode->i_ctime = CURRENT_TIME_SEC;
+    if (dir_dent) {
+      drop_nlink(new_inode);
+    }
+    inode_dec_link_count(new_inode);
+  } else {
+    if ((err = zarufs_add_link(new_dentry, old_inode))) {
+      goto out_dir;
+    }
+    if (dir_dent) {
+      inode_inc_link_count(new_dir);
+    }
+  }
+
+  old_inode->i_ctime = CURRENT_TIME_SEC;
+  mark_inode_dirty(old_inode);
+  zarufs_delete_dir_entry(old_dent, old_page);
+
+  if (dir_dent) {
+    if (old_dir != new_dir) {
+      zarufs_set_link(old_inode, dir_dent, dir_page, new_dir, 0);
+    } else {
+      kunmap(dir_page);
+      page_cache_release(dir_page);
+    }
+    inode_dec_link_count(old_dir);
+  }
+  return (0);
+
+ out_dir:
+  if (dir_dent) {
+    kunmap(dir_page);
+    page_cache_release(dir_page);
+  }
+
+ out_old:
+  kunmap(old_page);
+  page_cache_release(old_page);
+
+ out:
+  return(err);
 }
